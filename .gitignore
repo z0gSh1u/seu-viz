@@ -1,4 +1,3 @@
-
 # Created by https://www.toptal.com/developers/gitignore/api/c++,vs
 # Edit at https://www.toptal.com/developers/gitignore?templates=c++,vs
 
@@ -390,3 +389,6 @@ MigrationBackup/
 .ionide/
 
 # End of https://www.toptal.com/developers/gitignore/api/c++,vs
+
+# ! addons !
+!**/model/*
