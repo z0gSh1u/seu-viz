@@ -140,6 +140,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="OBJProcessor.hpp" />
+    <ClInclude Include="PhongLightModel.hpp" />
     <ClInclude Include="ReNow.hpp" />
     <ClInclude Include="Utils.hpp" />
   </ItemGroup>

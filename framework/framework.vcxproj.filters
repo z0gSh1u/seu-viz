@@ -24,5 +24,8 @@
     <ClInclude Include="Utils.hpp">
       <Filter>源文件</Filter>
     </ClInclude>
+    <ClInclude Include="PhongLightModel.hpp">
+      <Filter>源文件</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

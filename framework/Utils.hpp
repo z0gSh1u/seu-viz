@@ -4,6 +4,7 @@
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 #include <regex>
 #include <string>
 #include <vector>
@@ -16,12 +17,18 @@ using std::stringstream;
 
 using glm::vec2;
 using glm::vec3;
+using glm::vec4;
 using std::regex;
 using std::string;
 using std::vector;
 
 typedef vector<vec2> Vec2s;
 typedef vector<vec3> Vec3s;
+typedef vec3 RGBColor;
+
+vec4 normalize8bitColor(RGBColor rgb) {
+  return vec4(rgb.r / 255.0, rgb.g / 255.0, rgb.b / 255.0, 1.0);
+}
 
 string readFile(string filePath) {
   ifstream s(filePath);
