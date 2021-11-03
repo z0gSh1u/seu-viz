@@ -1,149 +1,202 @@
+// ################################################
+// Project 1 - 显示一个球面和正方体表面
+// 数据结构、颜色(RGBA)、视见变换（改变视点观察正方体现实）、光照模型（改变镜面反射参数观察球面显示效果）
+// by z0gSh1u @ https://github.com/z0gSh1u/seu-viz
+// ################################################
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-#include <string>
-
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
-using std::cout;
-using std::endl;
-
-#include <cassert>
 
 #include "../framework/ReNow.hpp"
-#include "../framework/OBJProcessor.hpp"
-#include "../framework/Utils.hpp"
+#include "../framework/Camera.hpp"
 #include "../framework/PhongLightModel.hpp"
 
-#define WINDOW_WIDTH 600
-#define WINDOW_HEIGHT 600
-
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/ext/matrix_transform.hpp>
-
-using glm::mat2;
 using glm::mat3;
 using glm::mat4;
-using glm::value_ptr;
 using glm::vec2;
 using glm::vec3;
 using glm::vec4;
 
+using namespace zx;
+
+#define WINDOW_WIDTH 800
+#define WINDOW_HEIGHT 800
+
+void consoleLogWelcome();
+
+// handle mouse events
+void mouseMoveCallback(GLFWwindow *window, double offsetX, double offsetY);
+float mouseX = WINDOW_WIDTH / 2;
+float mouseY = WINDOW_HEIGHT / 2;
+
+// handle keyboard events
+void keyboardHandler();
+
+// pespective parameters
+const float fovy = 90;
+const float aspect = WINDOW_WIDTH / WINDOW_HEIGHT;
+const float near = 0.05;
+const float far = 2.8;
+
+// camera
+Camera camera(vec3(-0.35, 0.15, -0.15));
+const float cameraMoveSpeed = 0.001;
+const float cameraRotateAnglePerPixel = 0.1;
+
+// shining
+vec3 lightPos(0.0, 0.1, 0.2);
+RGBColor specularMaterial = RGBColor(255, 255, 255);
+float shiness = 35.0;
+PhongLightModel phong(RGBWhite, RGBColor(230, 230, 230), RGBWhite,
+                      RGBColor(100, 100, 100), RGBWhite, specularMaterial,
+                      shiness);
+
+// ReNow helper
+ReNowHelper helper;
+
 int main() {
-  // init canvas
-  GLFWwindow *window = initGL("canvas", WINDOW_WIDTH, WINDOW_HEIGHT);
+  consoleLogWelcome();
 
-  // build shader
-  // vertex shader
-  GL_SHADER_ID vShader =
-      createShader(GL_VERTEX_SHADER, "F:/seu-viz/1-display/shader/vMain.glsl");
-
-  // fragment shader
-  GL_SHADER_ID fShader = createShader(GL_FRAGMENT_SHADER,
-                                      "F:/seu-viz/1-display/shader/fMain.glsl");
-
-  // build program
-  GL_PROGRAM_ID program = glCreateProgram();
-  glAttachShader(program, vShader);
-  glAttachShader(program, fShader);
-  glLinkProgram(program);
-  glUseProgram(program);
-  glClearColor(0.0, 0.0, 0.0, 1.0);
-  glClear(GL_COLOR_BUFFER_BIT);
+  // initialize
+  GLFWwindow *window = initGLWindow("0-display", WINDOW_WIDTH, WINDOW_HEIGHT);
   glEnable(GL_DEPTH_TEST);
-  glClear(GL_DEPTH_BUFFER_BIT);
+  glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
 
-  // prepare data
-  float cs[] = {0.0, 0.0, 1.0};
+  // listen mouse
+  glfwSetCursorPosCallback(window, mouseMoveCallback);
+  // take over management
+  helper = ReNowHelper(window);
 
-  OBJProcessor proc(readFile("F:/seu-viz/1-display/model/UnitSphere.obj"));
-  vector<float> _vs = flattenVec3s(analyzeFtoVfs(proc));
-  float *vs = &_vs[0];
-  vector<float> _vns = flattenVec3s(analyzeFtoVfns(proc));
-  float *vns = &_vns[0];
+  // organize the program
+  GL_SHADER_ID vShader =
+                   helper.createShader(GL_VERTEX_SHADER, "./shader/vMain.glsl"),
+               fShader = helper.createShader(GL_FRAGMENT_SHADER,
+                                             "./shader/fMain.glsl");
+  GL_PROGRAM_ID mainProgram = helper.createProgram(vShader, fShader);
+  helper.switchProgram(mainProgram);
 
-  // generate buffers to store the array temporarily
-  GL_OBJECT_ID vBuffer, vnBuffer;
-  glGenBuffers(1, &vBuffer);
-  glGenBuffers(1, &vnBuffer);
+  // start loading objects
+  GL_OBJECT_ID sphereVAO = helper.createVAO(), cubeVAO = helper.createVAO();
+  GL_OBJECT_ID sphereVBuf = helper.createVBO(), sphereNBuf = helper.createVBO();
+  GL_OBJECT_ID cubeVBuf = helper.createVBO(), cubeNBuf = helper.createVBO();
 
-  // set uniforms
-  mat4 worldMatrix = eye4(); // eye
-  mat4 modelMatrix = glm::scale(eye4(), vec3(0.8, 0.8, 0.8));
-  vec3 lightPos = vec3(0.9, 0.9, 0);
-  vec3 ambientColor(255, 255, 255);
-  vec3 ambientMaterial(200, 200, 200);
-  vec3 diffuseColor(255, 255, 255);
-  vec3 diffuseMaterial(66, 66, 66);
-  vec3 specularColor(255, 255, 255);
-  vec3 specularMaterial(200, 200, 200);
-  float materialShiness = 30.0;
-  PhongLightModel colorModel(lightPos, ambientColor, ambientMaterial,
-                             diffuseColor, diffuseMaterial, specularColor,
-                             specularMaterial, materialShiness);
+  std::cout << ">>> Start loading model .obj file, this might take a while..."
+            << std::endl;
+  // load the sphere and perpare to draw it
+  helper.switchVAO(sphereVAO);
+  OBJProcessor sphereOBJProc(readFile("./model/UnitSphere.obj"));
+  vector<float> sphereVs = analyzeFtoV(sphereOBJProc, "fs");
+  vector<float> sphereVns = analyzeFtoV(sphereOBJProc, "fns");
+  helper.prepareAttributes(vector<APrepInfo>{
+      {sphereVBuf, &(sphereVs[0]), sphereVs.size(), "aPosition", 3, GL_FLOAT},
+      {sphereNBuf, &(sphereVns[0]), sphereVns.size(), "aNormal", 3, GL_FLOAT},
+  });
 
-  glUniformMatrix4fv(getUniformLocation(program, "uWorldMatrix"), 1, GL_FALSE,
-                     value_ptr(worldMatrix));
-  glUniformMatrix4fv(getUniformLocation(program, "uModelMatrix"), 1, GL_FALSE,
-                     value_ptr(modelMatrix));
+  // load the cube and perpare to draw it
+  helper.switchVAO(cubeVAO);
+  OBJProcessor cubeOBJProc(readFile("./model/UnitCube.obj"));
+  vector<float> cubeVs = analyzeFtoV(cubeOBJProc, "fs");
+  vector<float> cubeVns = analyzeFtoV(cubeOBJProc, "fns");
+  helper.prepareAttributes(vector<APrepInfo>{
+      {cubeVBuf, &(cubeVs[0]), cubeVs.size(), "aPosition", 3, GL_FLOAT},
+      {cubeNBuf, &(cubeVns[0]), cubeVns.size(), "aNormal", 3, GL_FLOAT},
+  });
 
-  glUniform4fv(getUniformLocation(program, "uAmbientProduct"), 1,
-               value_ptr(colorModel.ambientProduct()));
-  glUniform4fv(getUniformLocation(program, "uDiffuseProduct"), 1,
-               value_ptr(colorModel.diffuseProduct()));
-  glUniform4fv(getUniformLocation(program, "uSpecularProduct"), 1,
-               value_ptr(colorModel.specularProduct()));
-  glUniform1f(getUniformLocation(program, "uShiness"), materialShiness);
-  glUniformMatrix4fv(
-      getUniformLocation(program, "uWorldMatrixTransInv"), 1, GL_FALSE,
-      value_ptr(glm::inverse(glm::transpose(
-          mat3(worldMatrix[0][0], worldMatrix[0][1], worldMatrix[0][2],
-               worldMatrix[1][0], worldMatrix[1][1], worldMatrix[1][2],
-               worldMatrix[2][0], worldMatrix[2][1], worldMatrix[2][2])))));
-  float delta = 0.01;
-
+  std::cout << ">>> Start rendering." << std::endl;
   // main loop
   while (!glfwWindowShouldClose(window)) {
-    glClear(GL_COLOR_BUFFER_BIT);
-    glClear(GL_DEPTH_BUFFER_BIT);
+    // handle keyboard pressings
+    keyboardHandler();
 
-    // change light position
-    float z = lightPos.z;
-    if (z > 1 || z < -1) {
-      delta *= -1;
-    }
-    lightPos.z = z + delta;
+    // clear the canvas for rerender
+    glClearColor(0.0, 0.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    helper.switchProgram(mainProgram);
 
-    glUniform4fv(getUniformLocation(program, "uLightPosition"), 1,
-                 value_ptr(vec4(lightPos, 1.0)));
+    // transform matrics
+    mat4 worldMat = camera.getLookAt();
+    mat4 perspectiveMat = glm::perspective(radians(fovy), aspect, near, far);
 
-    // send data
-    glBindBuffer(GL_ARRAY_BUFFER, vBuffer);
-    // tell OpenGL how to explain the data sent later
-    auto aPositionLoc = glGetAttribLocation(program, "aPosition");
-    assert(aPositionLoc != -1);
-    glVertexAttribPointer(aPositionLoc, 3, GL_FLOAT, GL_FALSE, 0, 0);
-    glEnableVertexAttribArray(aPositionLoc);
-    // send the data
-    glBufferData(GL_ARRAY_BUFFER, _vs.size() * sizeof(float), vs,
-                 GL_STATIC_DRAW);
+    helper.prepareUniforms(vector<UPrepInfo>{
+        // Phong light model things
+        {"uLightPosition", lightPos, "3fv"},
+        {"uAmbientProduct", phong.ambientProduct(), "4fv"},
+        {"uDiffuseProduct", phong.diffuseProduct(), "4fv"},
+        {"uSpecularProduct", phong.specularProduct(), "4fv"},
+        {"uShiness", phong.materialShiness(), "1f"},
+        // transform matrics
+        {"uPerspectiveMatrix", perspectiveMat, "Matrix4fv"},
+        {"uWorldMatrix", worldMat, "Matrix4fv"},
+    });
 
-    // send data
-    glBindBuffer(GL_ARRAY_BUFFER, vnBuffer);
-    // tell OpenGL how to explain the data sent later
-    auto aNormalLoc = glGetAttribLocation(program, "aNormal");
-    assert(aNormalLoc != -1);
-    glVertexAttribPointer(aNormalLoc, 3, GL_FLOAT, GL_FALSE, 0, 0);
-    glEnableVertexAttribArray(aNormalLoc);
-    // send the data
-    glBufferData(GL_ARRAY_BUFFER, _vns.size() * sizeof(float), vns,
-                 GL_STATIC_DRAW);
+    // draw the sphere
+    helper.prepareUniforms(vector<UPrepInfo>{
+        {"uColor", normalize8bitColor(RGBColor(29, 156, 215)), "4fv"},
+        {"uModelMatrix", scalem(vec3(0.2, 0.2, 0.2)) * translate(0, 0, 1.0),
+         "Matrix4fv"},
+    });
+    helper.switchVAO(sphereVAO);
+    glDrawArrays(GL_TRIANGLES, 0, sphereOBJProc.getEffectiveVertexCount());
 
-    glDrawArrays(GL_TRIANGLES, 0, proc.getEffectiveVertexCount());
+    // draw the cube
+    helper.prepareUniforms(vector<UPrepInfo>{
+        {"uColor", normalize8bitColor(RGBColor(245, 241, 20)), "4fv"},
+        {"uModelMatrix",
+         scalem(vec3(0.1, 0.1, 0.1)) * translate(0.5, 1.5, -1.0), "Matrix4fv"},
+    });
+    helper.switchVAO(cubeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, cubeOBJProc.getEffectiveVertexCount());
 
     glfwSwapBuffers(window);
     glfwPollEvents();
   }
 
+  // cleaning
+  helper.freeAllocatedObjects();
   glfwTerminate();
   return 0;
+}
+
+// handle keyboard events
+void keyboardHandler() {
+  // W-A-S-D move front-left-back-right
+  if (helper.nowPressing(GLFW_KEY_W)) {
+    camera.move(vec3(0, 0, cameraMoveSpeed));
+  }
+  if (helper.nowPressing(GLFW_KEY_A)) {
+    camera.move(vec3(-cameraMoveSpeed, 0, 0));
+  }
+  if (helper.nowPressing(GLFW_KEY_S)) {
+    camera.move(vec3(0, 0, -cameraMoveSpeed));
+  }
+  if (helper.nowPressing(GLFW_KEY_D)) {
+    camera.move(vec3(cameraMoveSpeed, 0, 0));
+  }
+  // space-shift move up-down
+  if (helper.nowPressing(GLFW_KEY_SPACE)) {
+    camera.move(vec3(0, cameraMoveSpeed, 0));
+  }
+  if (helper.nowPressing(GLFW_KEY_LEFT_SHIFT)) {
+    camera.move(vec3(0, -cameraMoveSpeed, 0));
+  }
+  // camera.printPosition();
+}
+
+// handle mouse movements
+void mouseMoveCallback(GLFWwindow *window, double offsetX, double offsetY) {
+  float dx = offsetX - mouseX, dy = -(offsetY - mouseY);
+  camera.rotate(
+      vec2(dy * cameraRotateAnglePerPixel, dx * cameraRotateAnglePerPixel));
+  mouseX = offsetX, mouseY = offsetY;
+}
+
+void consoleLogWelcome() {
+  std::cout << "################################\n"
+               "#  Viz Project 1               #\n"
+               "#  by 212138 - Zhuo Xu         #\n"
+               "# @ github.com/z0gSh1u/seu-viz #\n"
+               "################################\n";
 }

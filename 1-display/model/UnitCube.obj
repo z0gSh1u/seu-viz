@@ -1,7 +1,7 @@
 # Blender v2.93.5 OBJ File: 'UnitCube.blend'
 # www.blender.org
 mtllib UnitCube.mtl
-o 立方体
+o UnitCube
 v -1.000000 -1.000000 1.000000
 v -1.000000 1.000000 1.000000
 v -1.000000 -1.000000 -1.000000

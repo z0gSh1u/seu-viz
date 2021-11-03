@@ -54,6 +54,11 @@
     "xmemory": "cpp",
     "xstddef": "cpp",
     "xtr1common": "cpp",
-    "xutility": "cpp"
+    "xutility": "cpp",
+    "array": "cpp",
+    "charconv": "cpp",
+    "format": "cpp",
+    "map": "cpp",
+    "xtree": "cpp"
   }
 }

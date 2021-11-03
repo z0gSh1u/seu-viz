@@ -1,9 +1,16 @@
 #pragma once
+
+// OBJ File processor of ReNow Framework
+// by z0gSh1u @ https://github.com/z0gSh1u/seu-viz
+// See:
+// https://github.com/z0gSh1u/typed-webgl
+// https://github.com/z0gSh1u/renow-ts
+// https://github.com/z0gSh1u/renow-c
+
 #ifndef OBJPROCESSOR_HPP_
 #define OBJPROCESSOR_HPP_
 
-#include <glm/vec2.hpp>
-#include <glm/vec3.hpp>
+#include <glm/glm.hpp>
 #include <regex>
 #include <string>
 #include <vector>
@@ -16,6 +23,11 @@ using std::regex;
 using std::string;
 using std::vector;
 
+using namespace zx;
+
+namespace zx {
+
+// .obj File Processor
 class OBJProcessor {
 private:
   string _objFileContent;
@@ -52,6 +64,7 @@ OBJProcessor::OBJProcessor(string objFileContent) {
   this->_splitFileContent =
       stringSplit(this->_objFileContent, std::regex("\n"));
 
+  // regex to match various face line format
   regex f123Regex = regex(R"(^f (\d+/\d+/\d+ ){2}(\d+/\d+/\d+)$)");
   regex f12Regex = regex(R"(^f (\d+/\d+ ){2}(\d+/\d+)$)");
   regex f13Regex = regex(R"("^f (\d+/\d+/\d+ ){2}(\d+/\d+/\d+)$)");
@@ -59,6 +72,7 @@ OBJProcessor::OBJProcessor(string objFileContent) {
   vector<string> lineSplit;
   vector<float> vParsed;
   vector<int> fParsed;
+
   for (auto &line : this->_splitFileContent) {
     lineSplit = stringSplit(line, regex(R"(\s+)"));
     // mesh vertices
@@ -107,11 +121,13 @@ OBJProcessor::OBJProcessor(string objFileContent) {
     }
     // do nothing for `usemtl`, `o` and so on
     else {
-      // noop
+      {} // noop
     }
   }
 }
 
 OBJProcessor::~OBJProcessor() {}
+
+} // namespace zx
 
 #endif

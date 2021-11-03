@@ -9,6 +9,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "1-display", "1-display\1-di
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "framework", "framework\framework.vcxproj", "{F2E20B1A-114E-4FA6-8952-CEF1297193FC}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "2-raycasting", "2-raycasting\2-raycasting.vcxproj", "{453CA0C3-D3B9-462F-AC38-450CFA3FAC05}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -41,6 +43,14 @@ Global
 		{F2E20B1A-114E-4FA6-8952-CEF1297193FC}.Release|x64.Build.0 = Release|x64
 		{F2E20B1A-114E-4FA6-8952-CEF1297193FC}.Release|x86.ActiveCfg = Release|Win32
 		{F2E20B1A-114E-4FA6-8952-CEF1297193FC}.Release|x86.Build.0 = Release|Win32
+		{453CA0C3-D3B9-462F-AC38-450CFA3FAC05}.Debug|x64.ActiveCfg = Debug|x64
+		{453CA0C3-D3B9-462F-AC38-450CFA3FAC05}.Debug|x64.Build.0 = Debug|x64
+		{453CA0C3-D3B9-462F-AC38-450CFA3FAC05}.Debug|x86.ActiveCfg = Debug|Win32
+		{453CA0C3-D3B9-462F-AC38-450CFA3FAC05}.Debug|x86.Build.0 = Debug|Win32
+		{453CA0C3-D3B9-462F-AC38-450CFA3FAC05}.Release|x64.ActiveCfg = Release|x64
+		{453CA0C3-D3B9-462F-AC38-450CFA3FAC05}.Release|x64.Build.0 = Release|x64
+		{453CA0C3-D3B9-462F-AC38-450CFA3FAC05}.Release|x86.ActiveCfg = Release|Win32
+		{453CA0C3-D3B9-462F-AC38-450CFA3FAC05}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

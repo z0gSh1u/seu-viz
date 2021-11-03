@@ -24,6 +24,7 @@
     <ProjectGuid>{f2e20b1a-114e-4fa6-8952-cef1297193fc}</ProjectGuid>
     <RootNamespace>framework</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>framework</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -139,6 +140,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Camera.hpp" />
     <ClInclude Include="OBJProcessor.hpp" />
     <ClInclude Include="PhongLightModel.hpp" />
     <ClInclude Include="ReNow.hpp" />
