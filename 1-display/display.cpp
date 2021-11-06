@@ -33,7 +33,10 @@ float mouseX = WINDOW_WIDTH / 2;
 float mouseY = WINDOW_HEIGHT / 2;
 
 // handle keyboard events
+// handler is synchronized by mainloop clock
 void keyboardHandler();
+// while callback is only triggerd by keyboard pressing
+void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __);
 
 // pespective parameters
 const float fovy = 90;
@@ -47,12 +50,20 @@ const float cameraMoveSpeed = 0.001;
 const float cameraRotateAnglePerPixel = 0.1;
 
 // shining
-vec3 lightPos(0.0, 0.1, 0.2);
-RGBColor specularMaterial = RGBColor(255, 255, 255);
+vec3 lightPos(0.2, 0.2, 0.2);
+unsigned short specularColorIndex = 0, specularMaterialIndex = 0;
+vector<RGBColor> specularColorPresets = {
+    RGBColor(255, 255, 255), RGBColor(255, 0, 0),   RGBColor(0, 255, 0),
+    RGBColor(0, 0, 255),     RGBColor(255, 255, 0), RGBColor(255, 0, 255),
+    RGBColor(255, 255, 0),
+};
+vector<RGBColor> specularMaterialPresets =
+    vector<RGBColor>(specularColorPresets);
 float shiness = 35.0;
-PhongLightModel phong(RGBWhite, RGBColor(230, 230, 230), RGBWhite,
-                      RGBColor(100, 100, 100), RGBWhite, specularMaterial,
-                      shiness);
+PhongLightModel phong(RGBColor(240, 240, 240), RGBColor(230, 230, 230),
+                      RGBColor(240, 240, 240), RGBColor(60, 60, 60),
+                      specularColorPresets[specularColorIndex],
+                      specularMaterialPresets[specularMaterialIndex], shiness);
 
 // ReNow helper
 ReNowHelper helper;
@@ -65,8 +76,9 @@ int main() {
   glEnable(GL_DEPTH_TEST);
   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
 
-  // listen mouse
+  // listen mouse and keyboard
   glfwSetCursorPosCallback(window, mouseMoveCallback);
+  glfwSetKeyCallback(window, keyboardCallback);
   // take over management
   helper = ReNowHelper(window);
 
@@ -108,7 +120,7 @@ int main() {
   std::cout << ">>> Start rendering." << std::endl;
   // main loop
   while (!glfwWindowShouldClose(window)) {
-    // handle keyboard pressings
+    // handler frame-level keyboard event
     keyboardHandler();
 
     // clear the canvas for rerender
@@ -143,7 +155,7 @@ int main() {
 
     // draw the cube
     helper.prepareUniforms(vector<UPrepInfo>{
-        {"uColor", normalize8bitColor(RGBColor(245, 241, 20)), "4fv"},
+        {"uColor", normalize8bitColor(RGBColor(127, 127, 127)), "4fv"},
         {"uModelMatrix",
          scalem(vec3(0.1, 0.1, 0.1)) * translate(0.5, 1.5, -1.0), "Matrix4fv"},
     });
@@ -185,6 +197,39 @@ void keyboardHandler() {
   // camera.printPosition();
 }
 
+void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __) {
+  if (action == GLFW_PRESS) {
+    // specular lighting control
+    if (key == GLFW_KEY_O) {
+      specularColorIndex++;
+      specularColorIndex %= specularColorPresets.size();
+      phong.setSpecularColor(specularColorPresets[specularColorIndex]);
+      phong.recalcProducts();
+      std::cout << "Changed specularColor to "
+                << rgbColorToString(specularColorPresets[specularColorIndex])
+                << "\n";
+    }
+    if (key == GLFW_KEY_K) {
+      specularMaterialIndex++;
+      specularMaterialIndex %= specularMaterialPresets.size();
+      phong.setSpecularMaterial(specularMaterialPresets[specularMaterialIndex]);
+      phong.recalcProducts();
+      std::cout << "Changed specularMaterial to "
+                << rgbColorToString(
+                       specularMaterialPresets[specularMaterialIndex])
+                << "\n";
+    }
+    // shiness changes
+    if (key == GLFW_KEY_I || key == GLFW_KEY_J) {
+      shiness += (key & 1 ? 1 : -1) * 2;
+      shiness = zx::minmaxClip(shiness, 0.5, 30);
+      phong.setMaterialShiness(shiness);
+      phong.recalcProducts();
+      std::cout << "Changed shiness to " << shiness << "\n";
+    }
+  }
+}
+
 // handle mouse movements
 void mouseMoveCallback(GLFWwindow *window, double offsetX, double offsetY) {
   float dx = offsetX - mouseX, dy = -(offsetY - mouseY);
@@ -198,5 +243,15 @@ void consoleLogWelcome() {
                "#  Viz Project 1               #\n"
                "#  by 212138 - Zhuo Xu         #\n"
                "# @ github.com/z0gSh1u/seu-viz #\n"
-               "################################\n";
+               "################################\n"
+               "### Operation Guide ###\n"
+               "[View transforms]\n"
+               "W - Move forward; A - Move leftward\n"
+               "S - Move backward; D - Move rightward\n"
+               "Space - Move upward; Shift - Move upward\n"
+               "[Specular lighting]\n"
+               "O - Switch light color between presets\n"
+               "K - Switch material color between presets\n"
+               "I - Higher Shiness; J - Lower shiness\n"
+               "########################\n";
 }

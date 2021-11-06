@@ -64,7 +64,7 @@ public:
     _pitch += pitchYaw[0];
     _yaw += pitchYaw[1];
     // clip pitch
-    _pitch = _pitch > 89 ? 89 : _pitch < -89 ? -89 : _pitch;
+    _pitch = zx::minmaxClip(_pitch, -89, 89);
     if (_reCalc) {
       reCalc();
     }

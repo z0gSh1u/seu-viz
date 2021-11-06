@@ -91,6 +91,18 @@ vector<float> mapParseFloat(const vector<string> &strs, size_t l = 0) {
 // Convert DEG to RAD.
 float radians(float deg) { return deg / 180 * PI; }
 
+// Convert RGBColor to string for debug.
+string rgbColorToString(const RGBColor &color) {
+  stringstream ss;
+  ss << "[" << color.r << ", " << color.g << ", " << color.b << "]";
+  return ss.str();
+}
+
+// MIN-MAX clip
+float minmaxClip(float v, float min, float max) {
+  return v < min ? min : v > max ? max : v;
+}
+
 } // namespace zx
 
 #endif
