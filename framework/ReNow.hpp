@@ -178,7 +178,7 @@ public:
     GL_SHADER_ID shader = glCreateShader(shaderType);
 
     // read shader content
-    string _shaderContent = readFile(shaderPath);
+    string _shaderContent = readFileText(shaderPath);
     char *shaderContent = new char[_shaderContent.size() + 1];
     memcpy(shaderContent, _shaderContent.c_str(), _shaderContent.size() + 1);
     glShaderSource(shader, 1, &shaderContent, NULL);

@@ -72,7 +72,7 @@ int main() {
   consoleLogWelcome();
 
   // initialize
-  GLFWwindow *window = initGLWindow("0-display", WINDOW_WIDTH, WINDOW_HEIGHT);
+  GLFWwindow *window = initGLWindow("1-display", WINDOW_WIDTH, WINDOW_HEIGHT);
   glEnable(GL_DEPTH_TEST);
   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
 
@@ -99,7 +99,7 @@ int main() {
             << std::endl;
   // load the sphere and perpare to draw it
   helper.switchVAO(sphereVAO);
-  OBJProcessor sphereOBJProc(readFile("./model/UnitSphere.obj"));
+  OBJProcessor sphereOBJProc(readFileText("./model/UnitSphere.obj"));
   vector<float> sphereVs = analyzeFtoV(sphereOBJProc, "fs");
   vector<float> sphereVns = analyzeFtoV(sphereOBJProc, "fns");
   helper.prepareAttributes(vector<APrepInfo>{
@@ -109,7 +109,7 @@ int main() {
 
   // load the cube and perpare to draw it
   helper.switchVAO(cubeVAO);
-  OBJProcessor cubeOBJProc(readFile("./model/UnitCube.obj"));
+  OBJProcessor cubeOBJProc(readFileText("./model/UnitCube.obj"));
   vector<float> cubeVs = analyzeFtoV(cubeOBJProc, "fs");
   vector<float> cubeVns = analyzeFtoV(cubeOBJProc, "fns");
   helper.prepareAttributes(vector<APrepInfo>{

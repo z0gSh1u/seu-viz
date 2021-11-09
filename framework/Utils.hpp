@@ -16,12 +16,14 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <iostream>
 
 using glm::vec2;
 using glm::vec3;
 using glm::vec4;
 
 using std::ifstream;
+using std::ios;
 using std::regex;
 using std::string;
 using std::stringstream;
@@ -30,6 +32,7 @@ using std::vector;
 typedef vector<vec2> Vec2s;
 typedef vector<vec3> Vec3s;
 typedef vec3 RGBColor;
+typedef unsigned char Byte;
 
 namespace zx {
 
@@ -50,11 +53,18 @@ vec4 normalize8bitColor(RGBColor rgb) {
 }
 
 // Read file content as std::string.
-string readFile(string filePath) {
+string readFileText(string filePath) {
   ifstream s(filePath);
   stringstream buf;
   buf << s.rdbuf();
   return buf.str();
+}
+
+// Read file as binary.
+void readFileBinary(string filePath, int byteCount, Byte *store) {
+  ifstream s(filePath, ios::in | ios::binary);
+  s.read((char *)store, byteCount);
+  s.close();
 }
 
 // stringStartsWith
