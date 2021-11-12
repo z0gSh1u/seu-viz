@@ -113,6 +113,14 @@ float minmaxClip(float v, float min, float max) {
   return v < min ? min : v > max ? max : v;
 }
 
+vec4 clipRGBA(const vec4 &rgba, float min = 0, float max = 1) {
+  vec4 res;
+  for (int i = 0; i < 4; i++) {
+    res[i] = zx::minmaxClip(rgba[i], min, max);
+  }
+  return res;
+}
+
 } // namespace zx
 
 #endif
