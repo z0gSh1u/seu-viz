@@ -11,13 +11,13 @@
 // So we only need the right-top-back point to determine the bounding box
 // We call that point `bboxRTB`
 // [About the data]
-// IMPORTANT: Required volumn data .raw file fomat is
+// IMPORTANT: Required volume data .raw file fomat is
 // 16-bit unsigned LittleEndian per voxel
 #define BytesPerVoxel 2
 // [About the transfer function]
 // Refer to:
 #include "transferFunction.hpp"
-// Some preset TFs are set for demo volumn data
+// Some preset TFs are set for demo volume data
 // Refer to the document for detail
 
 #include <glad/glad.h>
@@ -43,18 +43,18 @@ using glm::vec4;
 #define WINDOW_WIDTH 128
 #define WINDOW_HEIGHT 128
 
-// volumn data metainfo
-const int VolumnWidth = 64;  // x
-const int VolumnHeight = 64; // y
-const int VolumnZCount = 64; // z (thickness)
-const vec3 bboxRTB(VolumnWidth, VolumnHeight, VolumnZCount);
-const int SizePerSlice = VolumnWidth * VolumnHeight;
-const int VoxelCount = SizePerSlice * VolumnZCount;
-const string VolumnPath = "./model/shep3d_64.uint16.raw";
-// volumn data
-uint16 volumnData[VoxelCount];
+// volume data metainfo
+const int VolumeWidth = 64;  // x
+const int VolumeHeight = 64; // y
+const int VolumeZCount = 64; // z (thickness)
+const vec3 bboxRTB(VolumeWidth, VolumeHeight, VolumeZCount);
+const int SizePerSlice = VolumeWidth * VolumeHeight;
+const int VoxelCount = SizePerSlice * VolumeZCount;
+const string VolumePath = "./model/shep3d_64.uint16.raw";
+// volume data
+uint16 volumeData[VoxelCount];
 // after coloring using transfer function (TF) (Classify Step)
-vec4 coloredVolumnData[VoxelCount]; // RGBA
+vec4 coloredVolumeData[VoxelCount]; // RGBA
 
 // image plane related
 const int ImagePlaneWidth = 64;
@@ -66,11 +66,11 @@ vec3 initialEyePos(0, 0, 80);
 // ###### ###### ###### ###### ###### ###### ###### ###### ######
 
 int getVoxelIndex(int x, int y, int z) {
-  return SizePerSlice * z + VolumnWidth * y + x;
+  return SizePerSlice * z + VolumeWidth * y + x;
 }
 
 // get voxel value according to (x, y, z)
-int getVoxel(int x, int y, int z) { return volumnData[getVoxelIndex(x, y, z)]; }
+int getVoxel(int x, int y, int z) { return volumeData[getVoxelIndex(x, y, z)]; }
 
 // Camera camera(vec3(0.5, 0.5, 1));
 
@@ -97,14 +97,14 @@ RGBAColor colorInterpTriLinear(const vec3 &pos, const vec3 &bboxRTB) {
 
   res =
       (1 - xd) * (1 - yd) * (1 - zd) *
-          coloredVolumnData[getVoxelIndex(z0, y0, x0)] +
-      xd * (1 - yd) * (1 - zd) * coloredVolumnData[getVoxelIndex(z0, y0, x1)] +
-      (1 - xd) * yd * (1 - zd) * coloredVolumnData[getVoxelIndex(z0, y1, x0)] +
-      (1 - xd) * (1 - yd) * zd * coloredVolumnData[getVoxelIndex(z1, y0, x0)] +
-      xd * yd * (1 - zd) * coloredVolumnData[getVoxelIndex(z0, y1, x1)] +
-      xd * (1 - yd) * zd * coloredVolumnData[getVoxelIndex(z1, y0, x1)] +
-      (1 - xd) * yd * zd * coloredVolumnData[getVoxelIndex(z0, y1, x1)] +
-      xd * yd * zd * coloredVolumnData[getVoxelIndex(z0, y0, x0)];
+          coloredVolumeData[getVoxelIndex(z0, y0, x0)] +
+      xd * (1 - yd) * (1 - zd) * coloredVolumeData[getVoxelIndex(z0, y0, x1)] +
+      (1 - xd) * yd * (1 - zd) * coloredVolumeData[getVoxelIndex(z0, y1, x0)] +
+      (1 - xd) * (1 - yd) * zd * coloredVolumeData[getVoxelIndex(z1, y0, x0)] +
+      xd * yd * (1 - zd) * coloredVolumeData[getVoxelIndex(z0, y1, x1)] +
+      xd * (1 - yd) * zd * coloredVolumeData[getVoxelIndex(z1, y0, x1)] +
+      (1 - xd) * yd * zd * coloredVolumeData[getVoxelIndex(z0, y1, x1)] +
+      xd * yd * zd * coloredVolumeData[getVoxelIndex(z0, y0, x0)];
 
   zx::clipRGBA(res);
   return res;
@@ -178,7 +178,7 @@ bool intersectTest(const vec3 &origin, const vec3 &direction,
 int colorTime = 0;
 
 // Cast one ray corresponding to (x0, y0) at image plane
-// according to `coloredVolumnData`. Returns the fusioned RGBAColor.
+// according to `coloredVolumeData`. Returns the fusioned RGBAColor.
 void castOneRay(int x0, int y0, const vec3 &bboxRTB, const mat3 &rotateMat,
                 const vec3 &translateVec,
                 const vec4 &defaultColor = vec4(RGBBlack, 1.0)) {
@@ -238,10 +238,10 @@ int main() {
   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
   glClearColor(0.9, 0.9, 0.9, 1);
 
-  readFileBinary(VolumnPath, BytesPerVoxel, VoxelCount, volumnData);
+  readFileBinary(VolumePath, BytesPerVoxel, VoxelCount, volumeData);
 
   std::cout << ">>> Start coloring." << std::endl;
-  TF_SheppLogan(volumnData, VoxelCount, coloredVolumnData);
+  TF_SheppLogan(volumeData, VoxelCount, coloredVolumeData);
 
   std::cout << ">>> Start ray casting." << std::endl;
   rayCasting();
