@@ -37,14 +37,6 @@ using std::vector;
 
 namespace zx {
 
-// type alias
-typedef GLuint GL_SHADER_ID;
-typedef GLuint GL_PROGRAM_ID;
-typedef GLuint GL_OBJECT_ID;
-typedef GLuint GL_SHADER_TYPE_;
-typedef GLint GL_UNIFORM_LOC;
-typedef GLint GL_ATTRIB_LOC;
-
 // Attribute preparation metainfo.
 struct APrepInfo {
   GL_OBJECT_ID VBO;

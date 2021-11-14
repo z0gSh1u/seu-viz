@@ -23,8 +23,6 @@ using std::regex;
 using std::string;
 using std::vector;
 
-using namespace zx;
-
 namespace zx {
 
 // .obj File Processor

@@ -17,6 +17,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include "ReNow.hpp"
 
 using glm::vec2;
 using glm::vec3;
@@ -29,14 +30,25 @@ using std::string;
 using std::stringstream;
 using std::vector;
 
+// type alias
+typedef GLuint GL_SHADER_ID;
+typedef GLuint GL_PROGRAM_ID;
+typedef GLuint GL_OBJECT_ID;
+typedef GLuint GL_SHADER_TYPE_;
+typedef GLint GL_UNIFORM_LOC;
+typedef GLint GL_ATTRIB_LOC;
+typedef unsigned char Byte;
+typedef unsigned char uint8;
+typedef unsigned short uint16;
 typedef vector<vec2> Vec2s;
 typedef vector<vec3> Vec3s;
 typedef vec3 RGBColor;
-typedef unsigned char Byte;
+typedef vec4 RGBAColor;
 
 namespace zx {
 
 const RGBColor RGBWhite = RGBColor(255, 255, 255);
+const RGBColor RGBBlack = RGBColor(0, 0, 0);
 const double PI = 3.1415926535;
 
 // Ensure `ensure`, else terminate and output hint.
@@ -61,10 +73,12 @@ string readFileText(string filePath) {
 }
 
 // Read file as binary.
-void readFileBinary(string filePath, int byteCount, Byte *store) {
-  ifstream s(filePath, ios::in | ios::binary);
-  s.read((char *)store, byteCount);
-  s.close();
+void readFileBinary(string filePath, int elementSize, int elementCount,
+                    void *store) {
+  FILE *fptr;
+  fopen_s(&fptr, filePath.c_str(), "rb");
+  fread((char *)store, elementSize, elementCount, fptr);
+  fclose(fptr);
 }
 
 // stringStartsWith
@@ -113,12 +127,20 @@ float minmaxClip(float v, float min, float max) {
   return v < min ? min : v > max ? max : v;
 }
 
+// MIN-MAX clip vec4
 vec4 clipRGBA(const vec4 &rgba, float min = 0, float max = 1) {
   vec4 res;
   for (int i = 0; i < 4; i++) {
     res[i] = zx::minmaxClip(rgba[i], min, max);
   }
   return res;
+}
+
+// Swap two values of type T.
+template <typename T> void swap(T &a, T &b) {
+  T tmp = a;
+  a = b;
+  b = tmp;
 }
 
 } // namespace zx

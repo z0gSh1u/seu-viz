@@ -4,10 +4,27 @@
 // by z0gSh1u @ https://github.com/z0gSh1u/seu-viz
 // ################################################
 
+// [About the geometry]
+// PLEASE Refer to the document for coordinate system geometry definition!
+// [About the bounding box]
+// The left-bottom-front point of bounding box is at (0, 0, 0)
+// So we only need the right-top-back point to determine the bounding box
+// We call that point `bboxRTB`
+// [About the data]
+// IMPORTANT: Required volumn data .raw file fomat is
+// 16-bit unsigned LittleEndian per voxel
+#define BytesPerVoxel 2
+// [About the transfer function]
+// Refer to:
+#include "transferFunction.hpp"
+// Some preset TFs are set for demo volumn data
+// Refer to the document for detail
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <ctime>
 
 #include "../framework/ReNow.hpp"
 #include "../framework/Camera.hpp"
@@ -21,116 +38,81 @@ using glm::mat4;
 using glm::vec3;
 using glm::vec4;
 
-#define WINDOW_WIDTH 320
-#define WINDOW_HEIGHT 320
+// ###### Here are some parameters maybe you want to modify ######
+
+#define WINDOW_WIDTH 128
+#define WINDOW_HEIGHT 128
 
 // volumn data metainfo
-#define VOL_N 256
-const int VolumnWidth = VOL_N;
-const int VolumnHeight = VOL_N;
-const int VolumnZCount = VOL_N;
-const int BytesPerVoxel = 1; // TODO support 16bit data
+const int VolumnWidth = 64;  // x
+const int VolumnHeight = 64; // y
+const int VolumnZCount = 64; // z (thickness)
+const vec3 bboxRTB(VolumnWidth, VolumnHeight, VolumnZCount);
 const int SizePerSlice = VolumnWidth * VolumnHeight;
-const int VoxelCount = VolumnZCount * VolumnWidth * VolumnHeight;
-const string VolumnPath = "./model/shep3d_256.uchar.raw";
-
-Byte volumnData[VoxelCount];
-
-int getVoxel(int x, int y, int z) {
-  int voxel = -1;
-  if (BytesPerVoxel == 1) {
-    voxel = volumnData[getIndex(z, y, x)];
-  } else if (BytesPerVoxel == 2) {
-    voxel = volumnData[getIndex(z, y, x) + 1]
-            << 8 + volumnData[getIndex(z, y, x)];
-  } else {
-    throw;
-  }
-  return voxel;
-}
-
-int getIndex(int z, int r, int c) {
-  return SizePerSlice * z + VolumnWidth * r + c;
-}
-
-// design TF (Classify)
+const int VoxelCount = SizePerSlice * VolumnZCount;
+const string VolumnPath = "./model/shep3d_64.uint16.raw";
+// volumn data
+uint16 volumnData[VoxelCount];
+// after coloring using transfer function (TF) (Classify Step)
 vec4 coloredVolumnData[VoxelCount]; // RGBA
 
-// float slice[VolumnWidth][VolumnHeight][4];
+// image plane related
+const int ImagePlaneWidth = 64;
+const int ImagePlaneHeight = 64;
+const int ImagePlaneSize = ImagePlaneWidth * ImagePlaneHeight;
+RGBAColor imagePlane[ImagePlaneHeight][ImagePlaneWidth]; // row-col order
+vec3 initialEyePos(0, 0, 80);
 
-void transferFunction1() {
-  for (int i = 0; i < VoxelCount; i++) {
-    Byte v = volumnData[i]; // 0 ~ 255,   0  51   77   255
-    if (v < 51) {
-      // white
-      coloredVolumnData[i].r = 1.0;
-      coloredVolumnData[i].g = 1.0;
-      coloredVolumnData[i].b = 1.0;
-      coloredVolumnData[i].a = 0.05;
-    } else if (v < 77) {
-      // a little red
-      coloredVolumnData[i].r = 0.9;
-      coloredVolumnData[i].g = 0.1;
-      coloredVolumnData[i].b = 0.1;
-      coloredVolumnData[i].a = 0.1;
-    } else if (v < 255) {
-      // a little yellow
-      coloredVolumnData[i].r = 0.1;
-      coloredVolumnData[i].g = 0.9;
-      coloredVolumnData[i].b = 0.9;
-      coloredVolumnData[i].a = 0.1;
-    } else {
-      // gray
-      coloredVolumnData[i].r = 0.3;
-      coloredVolumnData[i].g = 0.3;
-      coloredVolumnData[i].b = 0.3;
-      coloredVolumnData[i].a = 0.5;
-    }
-  }
+// ###### ###### ###### ###### ###### ###### ###### ###### ######
+
+int getVoxelIndex(int x, int y, int z) {
+  return SizePerSlice * z + VolumnWidth * y + x;
 }
 
-Camera camera(vec3(0.5, 0.5, 1));
+// get voxel value according to (x, y, z)
+int getVoxel(int x, int y, int z) { return volumnData[getVoxelIndex(x, y, z)]; }
 
-vec4 triLinearInterp(const vec3 &pos, const vec3 &bboxTR) {
-  int x0, y0, z0, x1, y1, z1;
-  float xd, yd, zd;
+// Camera camera(vec3(0.5, 0.5, 1));
+
+// Get interpolated color of pos using TriLinear method.
+RGBAColor colorInterpTriLinear(const vec3 &pos, const vec3 &bboxRTB) {
+  int x0, y0, z0, x1, y1, z1; // integer positions
+  float xd, yd, zd;           // remainders
+  RGBAColor res;
 
   x0 = int(pos.x);
   xd = pos.x - x0;
   x1 = x0 + 1;
-  x1 = x1 >= bboxTR.x ? x1 - 1 : x1;
+  x1 = x1 >= bboxRTB.x ? x1 - 1 : x1;
 
   y0 = int(pos.y);
   yd = pos.y - y0;
   y1 = y0 + 1;
-  y1 = y1 >= bboxTR.y ? y1 - 1 : y1;
+  y1 = y1 >= bboxRTB.y ? y1 - 1 : y1;
 
   z0 = int(pos.z);
   zd = pos.z - z0;
   z1 = z0 + 1;
-  z1 = z1 >= bboxTR.z ? z1 - 1 : z1;
+  z1 = z1 >= bboxRTB.z ? z1 - 1 : z1;
 
-  vec4 res;
-
-  // TODO DRAW
   res =
-      (1 - xd) * (1 - yd) * (1 - zd) * coloredVolumnData[getIndex(z0, y0, x0)] +
-      xd * (1 - yd) * (1 - zd) * coloredVolumnData[getIndex(z0, y0, x1)] +
-      (1 - xd) * yd * (1 - zd) * coloredVolumnData[getIndex(z0, y1, x0)] +
-      (1 - xd) * (1 - yd) * zd * coloredVolumnData[getIndex(z1, y0, x0)] +
-      xd * yd * (1 - zd) * coloredVolumnData[getIndex(z0, y1, x1)] +
-      xd * (1 - yd) * zd * coloredVolumnData[getIndex(z1, y0, x1)] +
-      (1 - xd) * yd * zd * coloredVolumnData[getIndex(z0, y1, x1)] +
-      xd * yd * zd * coloredVolumnData[getIndex(z0, y0, x0)];
+      (1 - xd) * (1 - yd) * (1 - zd) *
+          coloredVolumnData[getVoxelIndex(z0, y0, x0)] +
+      xd * (1 - yd) * (1 - zd) * coloredVolumnData[getVoxelIndex(z0, y0, x1)] +
+      (1 - xd) * yd * (1 - zd) * coloredVolumnData[getVoxelIndex(z0, y1, x0)] +
+      (1 - xd) * (1 - yd) * zd * coloredVolumnData[getVoxelIndex(z1, y0, x0)] +
+      xd * yd * (1 - zd) * coloredVolumnData[getVoxelIndex(z0, y1, x1)] +
+      xd * (1 - yd) * zd * coloredVolumnData[getVoxelIndex(z1, y0, x1)] +
+      (1 - xd) * yd * zd * coloredVolumnData[getVoxelIndex(z0, y1, x1)] +
+      xd * yd * zd * coloredVolumnData[getVoxelIndex(z0, y0, x0)];
 
-  // TODO clip TODO
   zx::clipRGBA(res);
-
   return res;
 }
 
+// Fusion `sample` color into `accumalted` using front-to-back iteration method.
 void fusionColorFrontToBack(vec4 &accmulated, const vec4 &sample) {
-  // RGB Fusion
+  // RGB fusion
   for (int i = 0; i < 3; i++) {
     accmulated[i] = accmulated[i] + (1 - accmulated.a) * sample.a * sample[i];
   }
@@ -138,124 +120,141 @@ void fusionColorFrontToBack(vec4 &accmulated, const vec4 &sample) {
   accmulated.a = accmulated.a + (1 - accmulated.a) * sample.a;
 }
 
-void rayCast(int x0, int y0, const vec3 &bboxTR) {
-  float delta = 1;
-  vec4 accumulated(0, 0, 0, 0);
-  vec4 sampleColor;
-  vec3 eye, direction, entry, samplePos;
-  // parallel lighting
-  eye = vec3(x0, y0, 0); // z = 0, eye on z-axis
-  auto worldMatrix = camera.getLookAt();
-
-  while (inBBox(samplePos, bboxTR) && accumulated.a < 1.0) {
-    // get sampleColor via interpolation
-    sampleColor = triLinearInterp(samplePos, bboxTR);
-
-    // Cout = Cin + (1-ain)aiCi
-    fusionColorFrontToBack(accumulated, sampleColor);
-
-    // go forward
-    samplePos += delta * direction;
-  }
+// judge if point is inside bouding box
+bool inBBox(const vec3 &point, const vec3 &bboxRTB) {
+  return point.x > 0 && point.x < bboxRTB.x && point.y > 0 &&
+         point.y < bboxRTB.y && point.z > 0 && point.z < bboxRTB.z;
 }
 
-bool inBBox(const vec3 &point, const vec3 &bboxTR) {
-  return point.x > 0 && point.x < bboxTR.x && point.y > 0 &&
-         point.y < bboxTR.y && point.z > 0 && point.z < bboxTR.z;
-}
-
-void swapFloat(float &a, float &b) {
-  float tmp = a;
-  a = b;
-  b = tmp;
-}
-
-// get entry point
-bool intersect(vec3 origin, vec3 direction, vec3 bboxTR, float &t,
-               vec3 &entry) {
-  float t0Final = -9999999, t1Final = 9999999;
+// helper for function `bool intersectTest`
+bool _intersectTestOnePlane(const float origin, const float direction,
+                            const float bboxRTB, float &t0Final,
+                            float &t1Final) {
+  const float EPSILON = 1e-4;
+  float bMin = 0, bMax = bboxRTB;
   float t0, t1;
-  float bMin, bMax;
-  float EPSILON = 1e-4;
 
-  // for YZ
-  bMin = 0, bMax = bboxTR.x;
-  if (fabs(direction.x) > EPSILON) { // dx != 0
-    t0 = (bMin - origin.x) / direction.x;
-    t1 = (bMax - origin.x) / direction.x;
+  if (fabs(direction) > EPSILON) { // direction != 0
+    t0 = (bMin - origin) / direction;
+    t1 = (bMax - origin) / direction;
     if (t0 > t1) {
-      swapFloat(t0, t1);
+      zx::swap<float>(t0, t1);
     }
     t0Final = max(t0Final, t0);
     t1Final = min(t1Final, t1);
     if (t0Final > t1Final || t1 < 0) {
-      return false;
+      return false; // must not intersect
     }
   }
 
-  // same for XY, ZX
-  bMin = 0, bMax = bboxTR.y;
-  if (fabs(direction.y) > EPSILON) {
-    t0 = (bMin - origin.y) / direction.y;
-    t1 = (bMax - origin.y) / direction.y;
-    if (t0 > t1) {
-      swapFloat(t0, t1);
-    }
-    t0Final = max(t0Final, t0);
-    t1Final = min(t1Final, t1);
-    if (t0Final > t1Final || t1 < 0) {
-      return false;
-    }
+  return true; // cannot determine for now
+}
+
+// Ray and bounding box intersection test
+// Eric Haines. "Essential Ray Tracing Algorithms." An introduction to ray
+// tracing. pp.33, 1989.
+// @see https://zhuanlan.zhihu.com/p/138259656
+// origin->direction determines the ray
+// the entry point is returned using &entry with parameter &t
+bool intersectTest(const vec3 &origin, const vec3 &direction,
+                   const vec3 &bboxRTB, vec3 &entry, float &t) {
+  float t0Final = -9999999, t1Final = 9999999;
+
+  if (!_intersectTestOnePlane(origin.x, direction.x, bboxRTB.x, t0Final,
+                              t1Final) ||
+      !_intersectTestOnePlane(origin.y, direction.y, bboxRTB.y, t0Final,
+                              t1Final) ||
+      !_intersectTestOnePlane(origin.z, direction.z, bboxRTB.z, t0Final,
+                              t1Final)) {
+    return false;
   }
 
-  bMin = 0, bMax = bboxTR.z;
-  if (fabs(direction.z) > EPSILON) {
-    t0 = (bMin - origin.z) / direction.z;
-    t1 = (bMax - origin.z) / direction.z;
-    if (t0 > t1) {
-      swapFloat(t0, t1);
-    }
-    t0Final = max(t0Final, t0);
-    t1Final = min(t1Final, t1);
-    if (t0Final > t1Final || t1 < 0) {
-      return false;
-    }
-  }
-
-  t = t0Final > 0 ? t0Final : t1Final;
+  t = t0Final >= 0 ? t0Final : t1Final;
   entry = origin + t * direction;
 
   return true;
 }
 
+int colorTime = 0;
+
+// Cast one ray corresponding to (x0, y0) at image plane
+// according to `coloredVolumnData`. Returns the fusioned RGBAColor.
+void castOneRay(int x0, int y0, const vec3 &bboxRTB, const mat3 &rotateMat,
+                const vec3 &translateVec,
+                const vec4 &defaultColor = vec4(RGBBlack, 1.0)) {
+  RGBAColor accumulated(0, 0, 0, 0); // acuumulated color during line integral
+
+  // we use parallel projection
+  vec3 source(x0, y0, 0);
+  vec3 direction(0, 0, -1); // the direction of ray is always -z
+  // transform to object corrdinate
+  // [xobj, yobj, zobj](t) = [x, y, tz]R+T
+  source = rotateMat * source + translateVec;
+  direction = rotateMat * direction;
+
+  vec3 entry;     // entry point of ray into bounding box
+  vec3 samplePos; // current voxel coordinate
+  RGBAColor sampleColor(0.0, 0.0, 0.0, 0.0); // current color (at current voxel)
+
+  const float delta = 1; // sampling stepsize
+  float tEntry;
+
+  bool intersect = intersectTest(source, direction, bboxRTB, entry, tEntry);
+  if (intersect) {
+    // initialize samplePos
+    samplePos = entry;
+    while (inBBox(samplePos, bboxRTB) && accumulated.a < 1.0) {
+      // get sampleColor via interpolation
+      sampleColor = colorInterpTriLinear(samplePos, bboxRTB);
+      // Cout = Cin + (1-ain)aiCi
+      fusionColorFrontToBack(accumulated, sampleColor);
+      // go forward
+      samplePos += delta * direction;
+    }
+    imagePlane[y0][x0] = RGBAColor(accumulated);
+  } else {
+    imagePlane[y0][x0] = RGBAColor(defaultColor);
+  }
+}
+
+// The very main.
+void rayCasting() {
+  // R, C computed using camera
+  mat3 R = eye3();
+  vec3 C = vec3(initialEyePos);
+  for (int r = 0; r < ImagePlaneHeight; r++) {
+    for (int c = 0; c < ImagePlaneWidth; c++) {
+      castOneRay(c, r, bboxRTB, R, C);
+    }
+  }
+}
+
 int main() {
+  time_t tic = time(NULL);
 
   // initialize
   GLFWwindow *window =
       initGLWindow("2-raycasting", WINDOW_WIDTH, WINDOW_HEIGHT);
   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
-  glClearColor(0.1, 0.1, 0.1, 1); // white
+  glClearColor(0.9, 0.9, 0.9, 1);
 
-  readFileBinary(VolumnPath, VoxelCount, volumnData);
+  readFileBinary(VolumnPath, BytesPerVoxel, VoxelCount, volumnData);
 
-  cout << volumnData[getIndex(128, 128, 128)] << endl;
+  std::cout << ">>> Start coloring." << std::endl;
+  TF_SheppLogan(volumnData, VoxelCount, coloredVolumnData);
 
-  transferFunction1();
-  // for (int i = 0; i < VolumnWidth; i++) {
-  //   for (int j = 0; j < VolumnHeight; j++) {
-  //     for (int k = 0; k < 4; k++) {
-  //       slice[i][j][k] = Colors[getIndex(128, i, j)][k];
-  //     }
-  //   }
-  // }
+  std::cout << ">>> Start ray casting." << std::endl;
+  rayCasting();
+
+  time_t toc = time(NULL);
+  std::cout << "Time elapsed: " << toc - tic << " secs." << endl;
 
   std::cout << ">>> Start rendering." << std::endl;
   // main loop
   while (!glfwWindowShouldClose(window)) {
     glClear(GL_COLOR_BUFFER_BIT);
-
-    // glDrawPixels(VolumnWidth, VolumnHeight, GL_RGBA, GL_FLOAT, slice);
-
+    glDrawPixels(ImagePlaneWidth, ImagePlaneHeight, GL_RGBA, GL_FLOAT,
+                 &(imagePlane[0]));
     glfwSwapBuffers(window);
     glfwPollEvents();
   }

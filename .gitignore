@@ -391,4 +391,5 @@ MigrationBackup/
 # End of https://www.toptal.com/developers/gitignore/api/c++,vs
 
 # ! addons !
-!**/model/*
+**/model/*
+*.raw
