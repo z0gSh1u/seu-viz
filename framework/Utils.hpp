@@ -143,6 +143,13 @@ template <typename T> void swap(T &a, T &b) {
   b = tmp;
 }
 
+// format print vec3
+string watchVec3(const vec3 &vec, string name = "") {
+  stringstream ss;
+  ss << name << ": (" << vec.x << ", " << vec.y << ", " << vec.z << ")" << "\n";
+  return ss.str();
+}
+
 } // namespace zx
 
 #endif

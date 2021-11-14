@@ -40,28 +40,30 @@ using glm::vec4;
 
 // ###### Here are some parameters maybe you want to modify ######
 
-#define WINDOW_WIDTH 128
-#define WINDOW_HEIGHT 128
+#define WINDOW_WIDTH 520
+#define WINDOW_HEIGHT 520
 
 // volume data metainfo
-const int VolumeWidth = 64;  // x
-const int VolumeHeight = 64; // y
-const int VolumeZCount = 64; // z (thickness)
+const int VolumeWidth = 512;  // x
+const int VolumeHeight = 512; // y
+const int VolumeZCount = 340; // z (thickness)
 const vec3 bboxRTB(VolumeWidth, VolumeHeight, VolumeZCount);
 const int SizePerSlice = VolumeWidth * VolumeHeight;
 const int VoxelCount = SizePerSlice * VolumeZCount;
-const string VolumePath = "./model/shep3d_64.uint16.raw";
+// const string VolumePath = "./model/shep3d_256.uint16.raw";
+const string VolumePath = "./model/lungct_C052_512_512_340.raw";
 // volume data
 uint16 volumeData[VoxelCount];
 // after coloring using transfer function (TF) (Classify Step)
 vec4 coloredVolumeData[VoxelCount]; // RGBA
 
 // image plane related
-const int ImagePlaneWidth = 64;
-const int ImagePlaneHeight = 64;
+const int ImagePlaneWidth = 512;
+const int ImagePlaneHeight = 512;
 const int ImagePlaneSize = ImagePlaneWidth * ImagePlaneHeight;
 RGBAColor imagePlane[ImagePlaneHeight][ImagePlaneWidth]; // row-col order
-vec3 initialEyePos(0, 0, 80);
+vec3 initialEyePos(0, 0, -128);
+vec3 initialEyeDirection(0, 0, 1);
 
 // ###### ###### ###### ###### ###### ###### ###### ###### ######
 
@@ -72,7 +74,7 @@ int getVoxelIndex(int x, int y, int z) {
 // get voxel value according to (x, y, z)
 int getVoxel(int x, int y, int z) { return volumeData[getVoxelIndex(x, y, z)]; }
 
-// Camera camera(vec3(0.5, 0.5, 1));
+Camera camera(vec3(0.5*512, 1.5*512, 0.5*128));
 
 // Get interpolated color of pos using TriLinear method.
 RGBAColor colorInterpTriLinear(const vec3 &pos, const vec3 &bboxRTB) {
@@ -97,14 +99,14 @@ RGBAColor colorInterpTriLinear(const vec3 &pos, const vec3 &bboxRTB) {
 
   res =
       (1 - xd) * (1 - yd) * (1 - zd) *
-          coloredVolumeData[getVoxelIndex(z0, y0, x0)] +
-      xd * (1 - yd) * (1 - zd) * coloredVolumeData[getVoxelIndex(z0, y0, x1)] +
-      (1 - xd) * yd * (1 - zd) * coloredVolumeData[getVoxelIndex(z0, y1, x0)] +
-      (1 - xd) * (1 - yd) * zd * coloredVolumeData[getVoxelIndex(z1, y0, x0)] +
-      xd * yd * (1 - zd) * coloredVolumeData[getVoxelIndex(z0, y1, x1)] +
-      xd * (1 - yd) * zd * coloredVolumeData[getVoxelIndex(z1, y0, x1)] +
-      (1 - xd) * yd * zd * coloredVolumeData[getVoxelIndex(z0, y1, x1)] +
-      xd * yd * zd * coloredVolumeData[getVoxelIndex(z0, y0, x0)];
+          coloredVolumeData[getVoxelIndex(x0, y0, z0)] +
+      xd * (1 - yd) * (1 - zd) * coloredVolumeData[getVoxelIndex(x1, y0, z1)] +
+      (1 - xd) * yd * (1 - zd) * coloredVolumeData[getVoxelIndex(x0, y1, z0)] +
+      (1 - xd) * (1 - yd) * zd * coloredVolumeData[getVoxelIndex(x1, y0, z0)] +
+      xd * yd * (1 - zd) * coloredVolumeData[getVoxelIndex(x0, y1, z1)] +
+      xd * (1 - yd) * zd * coloredVolumeData[getVoxelIndex(x1, y0, z1)] +
+      (1 - xd) * yd * zd * coloredVolumeData[getVoxelIndex(x0, y1, z1)] +
+      xd * yd * zd * coloredVolumeData[getVoxelIndex(x0, y0, z0)];
 
   zx::clipRGBA(res);
   return res;
@@ -122,8 +124,8 @@ void fusionColorFrontToBack(vec4 &accmulated, const vec4 &sample) {
 
 // judge if point is inside bouding box
 bool inBBox(const vec3 &point, const vec3 &bboxRTB) {
-  return point.x > 0 && point.x < bboxRTB.x && point.y > 0 &&
-         point.y < bboxRTB.y && point.z > 0 && point.z < bboxRTB.z;
+  return point.x >= 0 && point.x <= bboxRTB.x && point.y >= 0 &&
+         point.y <= bboxRTB.y && point.z >= 0 && point.z <= bboxRTB.z;
 }
 
 // helper for function `bool intersectTest`
@@ -142,6 +144,7 @@ bool _intersectTestOnePlane(const float origin, const float direction,
     }
     t0Final = max(t0Final, t0);
     t1Final = min(t1Final, t1);
+
     if (t0Final > t1Final || t1 < 0) {
       return false; // must not intersect
     }
@@ -178,7 +181,7 @@ bool intersectTest(const vec3 &origin, const vec3 &direction,
 int colorTime = 0;
 
 // Cast one ray corresponding to (x0, y0) at image plane
-// according to `coloredVolumeData`. Returns the fusioned RGBAColor.
+// according to `coloredVolumeData`. Returns the fused RGBAColor.
 void castOneRay(int x0, int y0, const vec3 &bboxRTB, const mat3 &rotateMat,
                 const vec3 &translateVec,
                 const vec4 &defaultColor = vec4(RGBBlack, 1.0)) {
@@ -186,7 +189,8 @@ void castOneRay(int x0, int y0, const vec3 &bboxRTB, const mat3 &rotateMat,
 
   // we use parallel projection
   vec3 source(x0, y0, 0);
-  vec3 direction(0, 0, -1); // the direction of ray is always -z
+  // the default direction of ray is +z
+  vec3 direction(initialEyeDirection);
   // transform to object corrdinate
   // [xobj, yobj, zobj](t) = [x, y, tz]R+T
   source = rotateMat * source + translateVec;
@@ -212,20 +216,44 @@ void castOneRay(int x0, int y0, const vec3 &bboxRTB, const mat3 &rotateMat,
       samplePos += delta * direction;
     }
     imagePlane[y0][x0] = RGBAColor(accumulated);
+    colorTime++;
   } else {
     imagePlane[y0][x0] = RGBAColor(defaultColor);
   }
 }
 
+// Implement of simple progressbar
+// @see https://stackoverflow.com/questions/14539867/
+void updateProgressBar(float progress, int barWidth = 50) {
+  cout << "[";
+  int pos = barWidth * progress;
+  for (int i = 0; i < barWidth; ++i) {
+    if (i < pos)
+      cout << "=";
+    else if (i == pos)
+      cout << ">";
+    else
+      cout << " ";
+  }
+  cout << "] " << int(progress * 100.0) << " %\r";
+  cout.flush();
+}
+
 // The very main.
 void rayCasting() {
   // R, C computed using camera
+  // mat3 R = mat3(camera.getLookAt());
   mat3 R = eye3();
   vec3 C = vec3(initialEyePos);
+
+  float progress = 0.0;
+  const float progressPerRow = (float)ImagePlaneWidth / ImagePlaneSize;
+
   for (int r = 0; r < ImagePlaneHeight; r++) {
     for (int c = 0; c < ImagePlaneWidth; c++) {
-      castOneRay(c, r, bboxRTB, R, C);
+      castOneRay(c, r, bboxRTB, R, initialEyePos);
     }
+    updateProgressBar(progress = progress + progressPerRow);
   }
 }
 
@@ -240,21 +268,28 @@ int main() {
 
   readFileBinary(VolumePath, BytesPerVoxel, VoxelCount, volumeData);
 
-  std::cout << ">>> Start coloring." << std::endl;
-  TF_SheppLogan(volumeData, VoxelCount, coloredVolumeData);
+  // FIXME
+  camera.rotate(vec2(-89, 0));
 
-  std::cout << ">>> Start ray casting." << std::endl;
+  cout << ">>> Start applying transfer function..." << endl;
+  // TF_SheppLogan(volumeData, VoxelCount, coloredVolumeData);
+  // TF_CTLung(volumeData, VoxelCount, coloredVolumeData);
+  TF_CTBone2(volumeData, VoxelCount, coloredVolumeData);
+
+  cout << ">>> Start ray casting..." << endl;
   rayCasting();
+  cout << endl;
 
   time_t toc = time(NULL);
-  std::cout << "Time elapsed: " << toc - tic << " secs." << endl;
+  cout << "Time elapsed: " << toc - tic << " secs." << endl;
+  cout << "# Ray cast: " << ImagePlaneSize << endl;
 
-  std::cout << ">>> Start rendering." << std::endl;
+  cout << ">>> Start rendering..." << endl;
   // main loop
   while (!glfwWindowShouldClose(window)) {
     glClear(GL_COLOR_BUFFER_BIT);
     glDrawPixels(ImagePlaneWidth, ImagePlaneHeight, GL_RGBA, GL_FLOAT,
-                 &(imagePlane[0]));
+                 imagePlane);
     glfwSwapBuffers(window);
     glfwPollEvents();
   }
