@@ -1,14 +1,14 @@
 {
-  "WindowWidth": 512,
-  "WindowHeight": 512,
+  "WindowWidth": 64,
+  "WindowHeight": 64,
 
-  "VolumePath": "./model/lungct_070_197_512_512_128.uint16.rev.raw",
-  "VolumeWidth": 512,
-  "VolumeHeight": 512,
-  "VolumeZCount": 128,
+  "VolumePath": "./model/shep3d_64.uint16.raw",
+  "VolumeWidth": 64,
+  "VolumeHeight": 64,
+  "VolumeZCount": 64,
 
-  "ImagePlaneWidth": 512,
-  "ImagePlaneHeight": 512,
-  
-  "TransferFunction": "CT_Lung"
+  "ImagePlaneWidth": 64,
+  "ImagePlaneHeight": 64,
+
+  "TransferFunction": "SheppLogan"
 }

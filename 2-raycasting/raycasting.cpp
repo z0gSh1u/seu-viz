@@ -24,21 +24,22 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <ctime>
 #include <rapidjson/document.h>
+#include <ctime>
+#include <thread>
+#include <algorithm>
 
 #include "../framework/ReNow.hpp"
-#include "../framework/Camera.hpp"
 #include "../framework/Utils.hpp"
 
 using namespace std;
 using namespace zx;
-using namespace rapidjson;
 
 using glm::mat3;
 using glm::mat4;
 using glm::vec3;
 using glm::vec4;
+using rapidjson::Document;
 
 // ###### Here are some parameters that will be read from config.json ######
 // ###### or calculated accordingly.                                  ######
@@ -65,20 +66,31 @@ int ImagePlaneHeight;
 int ImagePlaneSize = ImagePlaneWidth * ImagePlaneHeight;
 RGBAColor *imagePlane; // row-col order
 vec3 initialEyePos;
-vec3 initialEyeDirection(0, 0, 1);
+vec3 initialEyeDirection(0, 0, 1); // refer to the geometry
+mat3 rotateMatrix;                 // the R matrix
 
 // transfer function
 string TransferFunctionName;
 
+int multiThread; // number of threads
+
+// for progress bar printing
 float progress = 0.0;
-float progressPerRow;
+float progressPerThreadPerRow;
 
 // ###### ###### ###### ###### ###### ###### ###### ###### ######
+
+// preset rotate matrics
+vector<pair<string, mat3>> PresetRotateMatrics = {
+    {"Axial View Plane", mat3(eye4())},
+    {"Coronal View Plane", mat3(eye4() * rotateX(radians(-90)))},
+    {"Sagittal View Plane", mat3(eye4() * rotateY(radians(90)))}};
+int rotateMatrixIndex = 2;
 
 // load config file from config.json
 void loadConfigFile() {
   Document d;
-  d.Parse(readFileText("./config.json").c_str());
+  d.Parse(readFileText("./config2.json").c_str());
 
   WINDOW_WIDTH = d["WindowWidth"].GetInt();
   WINDOW_HEIGHT = d["WindowHeight"].GetInt();
@@ -98,9 +110,13 @@ void loadConfigFile() {
   ImagePlaneSize = ImagePlaneWidth * ImagePlaneHeight;
   imagePlane = new RGBAColor[ImagePlaneSize];
 
+  initialEyePos = vec3(0, 0, VolumeZCount);
+
   TransferFunctionName = d["TransferFunction"].GetString();
 
-  progressPerRow = (float)ImagePlaneWidth / ImagePlaneSize;
+  multiThread = d["MultiThread"].GetInt();
+  progressPerThreadPerRow =
+      (float)ImagePlaneWidth * multiThread / ImagePlaneSize;
 }
 
 // ###### About image pixel data access ######
@@ -137,8 +153,6 @@ void applyTransferFunction() {
          << endl;
   }
 }
-
-Camera camera(vec3(0.5 * VolumeWidth, 1.5 * VolumeHeight, 0.5 * VolumeZCount));
 
 // Get interpolated color of pos using TriLinear method.
 RGBAColor colorInterpTriLinear(const vec3 &pos, const vec3 &bboxRTB) {
@@ -242,7 +256,7 @@ bool intersectTest(const vec3 &origin, const vec3 &direction,
   return true;
 }
 
-int colorTime = 0;
+int colorTimes = 0;
 
 // Cast one ray corresponding to (x0, y0) at image plane
 // according to `coloredVolumeData`. Returns the fused RGBAColor.
@@ -252,10 +266,10 @@ void castOneRay(int x0, int y0, const vec3 &bboxRTB, const mat3 &rotateMat,
   RGBAColor accumulated(0, 0, 0, 0); // acuumulated color during line integral
 
   // use parallel projection
-  vec3 source(x0, y0, 0);
+  vec3 source(x0, y0, 0); // light source point
   // the default direction of ray is +z
   vec3 direction(initialEyeDirection);
-  // transform to object corrdinate
+  // transform to object coordinate
   // [xobj, yobj, zobj](t) = [x, y, tz]R+T
   source = rotateMat * source + translateVec;
   direction = rotateMat * direction;
@@ -280,7 +294,7 @@ void castOneRay(int x0, int y0, const vec3 &bboxRTB, const mat3 &rotateMat,
       samplePos += delta * direction;
     }
     imagePlane[getPixelIndex(y0, x0)] = RGBAColor(accumulated);
-    colorTime++;
+    colorTimes++;
   } else {
     imagePlane[getPixelIndex(y0, x0)] = RGBAColor(defaultColor);
   }
@@ -291,42 +305,90 @@ void castOneRay(int x0, int y0, const vec3 &bboxRTB, const mat3 &rotateMat,
 void updateProgressBar(float progress, int barWidth = 50) {
   cout << "[";
   int pos = barWidth * progress;
-  for (int i = 0; i < barWidth; ++i) {
-    if (i < pos)
-      cout << "=";
-    else if (i == pos)
-      cout << ">";
-    else
-      cout << " ";
+  for (int i = 0; i < barWidth; i++) {
+    cout << (i < pos ? "=" : i == pos ? ">" : " ");
   }
   cout << "] " << int(progress * 100.0) << " %\r";
   cout.flush();
 }
 
-// The very main.
-void rayCasting() {
-  // R, C computed using camera
-  // mat3 R = mat3(camera.getLookAt());
-  mat3 R = eye3();
-  vec3 C = vec3(initialEyePos);
-  for (int r = 0; r < ImagePlaneHeight; r++) {
+// Written in this form to support multi-thread processing.
+void castSomeRays(int rowLow, int rowHigh) {
+  mat3 R = rotateMatrix;
+  vec3 T = -initialEyePos;
+  for (int r = rowLow; r < rowHigh; r++) {
     for (int c = 0; c < ImagePlaneWidth; c++) {
-      castOneRay(c, r, bboxRTB, R, initialEyePos);
+      castOneRay(c, r, bboxRTB, R, T);
     }
-    updateProgressBar(progress = progress + progressPerRow);
+    if (rowLow == 0) { // the first thread
+      updateProgressBar(progress = progress + progressPerThreadPerRow);
+    }
   }
 }
 
+// print name of current view plane
+void printCurrentViewPlane() {
+  cout << "[Current View Plane]\n"
+       << PresetRotateMatrics[rotateMatrixIndex].first << "\n";
+}
+
 void consoleLogWelcome() {
-  std::cout << "################################\n"
-               "# Viz Project 2 - Ray Casting  #\n"
-               "#  by 212138 - Zhuo Xu         #\n"
-               "# @ github.com/z0gSh1u/seu-viz #\n"
-               "################################\n";
+  cout << "################################\n"
+          "# Viz Project 2 - Ray Casting  #\n"
+          "#  by 212138 - Zhuo Xu         #\n"
+          "# @ github.com/z0gSh1u/seu-viz #\n"
+          "################################\n"
+          "### Operation Guide ###\n"
+          "Use [Enter] key to switch between Preset Rotate Matrics\n"
+          "to observe from different views.\n"
+          "########################\n";
+}
+
+// The very main: Multi-thread Ray Casting
+void rayCasting() {
+  vector<thread> threadPool;
+  const float sharePerThread = (float)1 / multiThread;
+  for (int i = 0; i < multiThread; i++) {
+    int low = int(sharePerThread * i * ImagePlaneHeight);
+    int high = i == multiThread - 1
+                   ? ImagePlaneHeight
+                   : int(sharePerThread * (i + 1) * ImagePlaneHeight);
+    threadPool.push_back(thread(castSomeRays, low, high));
+  }
+  for_each(threadPool.begin(), threadPool.end(), [=](thread &t) { t.join(); });
+}
+
+void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __) {
+  if (action == GLFW_PRESS) {
+    // change between view planes
+    if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
+      // prepare for a new rendering
+      colorTimes = 0;
+      progress = 0.0;
+      // switch rotate matrix
+      rotateMatrixIndex = (rotateMatrixIndex + 1) % PresetRotateMatrics.size();
+      rotateMatrix = PresetRotateMatrics[rotateMatrixIndex].second;
+      cout << ">>> Restart ray casting using " << multiThread << " threads..."
+           << endl;
+      // print current view plane name
+      cout << "[Current View Plane]: "
+           << PresetRotateMatrics[rotateMatrixIndex].first << "\n";
+      // restart ray casting
+      time_t tic = time(NULL);
+      rayCasting();
+      time_t toc = time(NULL);
+      cout << endl
+           << "# Ray intersects: " << colorTimes << endl
+           << "# Ray cast: " << ImagePlaneSize << endl
+           << "Time elapsed: " << toc - tic << " secs." << endl
+           << endl
+           << ">>> Start rendering..." << endl
+           << endl;
+    }
+  }
 }
 
 int main() {
-
   // initialize
   consoleLogWelcome();
   loadConfigFile();
@@ -334,27 +396,20 @@ int main() {
   GLFWwindow *window =
       initGLWindow("2-raycasting", WINDOW_WIDTH, WINDOW_HEIGHT);
   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+  glfwSetKeyCallback(window, keyboardCallback);
   glClearColor(0.9, 0.9, 0.9, 1);
 
   readFileBinary(VolumePath, BytesPerVoxel, VoxelCount, volumeData);
 
-  // FIXME
-  // camera.rotate(vec2(-89, 0));
-
   time_t tic = time(NULL);
   cout << ">>> Start applying transfer function..." << endl;
+  cout << "[Transfer Function Name]: " << TransferFunctionName << endl;
   applyTransferFunction();
-
-  cout << ">>> Start ray casting..." << endl;
-  rayCasting();
-
   cout << endl;
 
-  time_t toc = time(NULL);
-  cout << "Time elapsed: " << toc - tic << " secs." << endl;
-  cout << "# Ray cast: " << ImagePlaneSize << endl;
+  // simulate keyboard press to start rendering
+  keyboardCallback(NULL, GLFW_KEY_ENTER, -1, GLFW_PRESS, -1);
 
-  cout << ">>> Start rendering..." << endl;
   // main loop
   while (!glfwWindowShouldClose(window)) {
     glClear(GL_COLOR_BUFFER_BIT);
