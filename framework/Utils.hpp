@@ -59,9 +59,14 @@ void ASSERT(bool ensure, const string &hint) {
   }
 }
 
-// Normalize 8bit color to RGBA (0~1).
-vec4 normalize8bitColor(RGBColor rgb) {
+// Normalize 8bit RGB color to RGBA (0~1), alpha=1.0
+vec4 normalizeRGBColor(RGBColor rgb) {
   return vec4(rgb.r / 255.0, rgb.g / 255.0, rgb.b / 255.0, 1.0);
+}
+
+// Normalize 8bit RGBA color's RGB components, keep alpha
+vec4 normalizeRGBAColor(RGBAColor rgba) {
+  return vec4(rgba.r / 255.0, rgba.g / 255.0, rgba.b / 255.0, rgba.a);
 }
 
 // Read file content as std::string.
@@ -146,7 +151,8 @@ template <typename T> void swap(T &a, T &b) {
 // format print vec3
 string watchVec3(const vec3 &vec, string name = "") {
   stringstream ss;
-  ss << name << ": (" << vec.x << ", " << vec.y << ", " << vec.z << ")" << "\n";
+  ss << name << ": (" << vec.x << ", " << vec.y << ", " << vec.z << ")"
+     << "\n";
   return ss.str();
 }
 

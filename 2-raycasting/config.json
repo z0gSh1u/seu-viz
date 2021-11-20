@@ -1,0 +1,14 @@
+{
+  "WindowWidth": 512,
+  "WindowHeight": 512,
+
+  "VolumePath": "./model/lungct_070_197_512_512_128.uint16.rev.raw",
+  "VolumeWidth": 512,
+  "VolumeHeight": 512,
+  "VolumeZCount": 128,
+
+  "ImagePlaneWidth": 512,
+  "ImagePlaneHeight": 512,
+  
+  "TransferFunction": "CT_Lung"
+}

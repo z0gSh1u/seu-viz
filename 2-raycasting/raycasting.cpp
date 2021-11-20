@@ -25,6 +25,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <ctime>
+#include <rapidjson/document.h>
 
 #include "../framework/ReNow.hpp"
 #include "../framework/Camera.hpp"
@@ -32,40 +33,87 @@
 
 using namespace std;
 using namespace zx;
+using namespace rapidjson;
 
 using glm::mat3;
 using glm::mat4;
 using glm::vec3;
 using glm::vec4;
 
-// ###### Here are some parameters maybe you want to modify ######
+// ###### Here are some parameters that will be read from config.json ######
+// ###### or calculated accordingly.                                  ######
 
-#define WINDOW_WIDTH 520
-#define WINDOW_HEIGHT 520
+int WINDOW_WIDTH;
+int WINDOW_HEIGHT;
 
 // volume data metainfo
-const int VolumeWidth = 512;  // x
-const int VolumeHeight = 512; // y
-const int VolumeZCount = 340; // z (thickness)
-const vec3 bboxRTB(VolumeWidth, VolumeHeight, VolumeZCount);
-const int SizePerSlice = VolumeWidth * VolumeHeight;
-const int VoxelCount = SizePerSlice * VolumeZCount;
-// const string VolumePath = "./model/shep3d_256.uint16.raw";
-const string VolumePath = "./model/lungct_C052_512_512_340.raw";
+int VolumeWidth;  // x
+int VolumeHeight; // y
+int VolumeZCount; // z (thickness)
+vec3 bboxRTB;     // bounding box Right-Top-Back
+int SizePerSlice;
+int VoxelCount;
+string VolumePath;
 // volume data
-uint16 volumeData[VoxelCount];
+uint16 *volumeData;
 // after coloring using transfer function (TF) (Classify Step)
-vec4 coloredVolumeData[VoxelCount]; // RGBA
+vec4 *coloredVolumeData; // RGBA
 
 // image plane related
-const int ImagePlaneWidth = 512;
-const int ImagePlaneHeight = 512;
-const int ImagePlaneSize = ImagePlaneWidth * ImagePlaneHeight;
-RGBAColor imagePlane[ImagePlaneHeight][ImagePlaneWidth]; // row-col order
-vec3 initialEyePos(0, 0, -128);
+int ImagePlaneWidth;
+int ImagePlaneHeight;
+int ImagePlaneSize = ImagePlaneWidth * ImagePlaneHeight;
+RGBAColor *imagePlane; // row-col order
+vec3 initialEyePos;
 vec3 initialEyeDirection(0, 0, 1);
 
+// transfer function
+string TransferFunctionName;
+
+float progress = 0.0;
+float progressPerRow;
+
 // ###### ###### ###### ###### ###### ###### ###### ###### ######
+
+// load config file from config.json
+void loadConfigFile() {
+  Document d;
+  d.Parse(readFileText("./config.json").c_str());
+
+  WINDOW_WIDTH = d["WindowWidth"].GetInt();
+  WINDOW_HEIGHT = d["WindowHeight"].GetInt();
+
+  VolumePath = d["VolumePath"].GetString();
+  VolumeWidth = d["VolumeWidth"].GetInt();
+  VolumeHeight = d["VolumeHeight"].GetInt();
+  VolumeZCount = d["VolumeZCount"].GetInt();
+  bboxRTB = vec3(VolumeWidth, VolumeHeight, VolumeZCount);
+  SizePerSlice = VolumeWidth * VolumeHeight;
+  VoxelCount = SizePerSlice * VolumeZCount;
+  volumeData = new uint16[VoxelCount];
+  coloredVolumeData = new vec4[VoxelCount];
+
+  ImagePlaneWidth = d["ImagePlaneWidth"].GetInt();
+  ImagePlaneHeight = d["ImagePlaneHeight"].GetInt();
+  ImagePlaneSize = ImagePlaneWidth * ImagePlaneHeight;
+  imagePlane = new RGBAColor[ImagePlaneSize];
+
+  TransferFunctionName = d["TransferFunction"].GetString();
+
+  progressPerRow = (float)ImagePlaneWidth / ImagePlaneSize;
+}
+
+// ###### About image pixel data access ######
+
+int getPixelIndex(int r, int c) {
+  // Refer to the geometry definition. Row starts from "bottom"
+  // rather than "top".
+  return (ImagePlaneHeight - 1 - r) * ImagePlaneWidth + c;
+}
+
+// ###### ###### ###### ###### ###### ######
+
+// ###### About volume data access ######
 
 int getVoxelIndex(int x, int y, int z) {
   return SizePerSlice * z + VolumeWidth * y + x;
@@ -74,7 +122,23 @@ int getVoxelIndex(int x, int y, int z) {
 // get voxel value according to (x, y, z)
 int getVoxel(int x, int y, int z) { return volumeData[getVoxelIndex(x, y, z)]; }
 
-Camera camera(vec3(0.5*512, 1.5*512, 0.5*128));
+// ###### ###### ###### ###### ###### ######
+
+// apply transfer function to fill `coloredVolumeData`
+void applyTransferFunction() {
+  if (TransferFunctionName == "SheppLogan") {
+    TF_SheppLogan(volumeData, VoxelCount, coloredVolumeData);
+  } else if (TransferFunctionName == "CT_Lung") {
+    TF_CT_Lung(volumeData, VoxelCount, coloredVolumeData);
+  } else if (TransferFunctionName == "CT_Bone") {
+    TF_CT_Bone(volumeData, VoxelCount, coloredVolumeData);
+  } else {
+    cerr << "[WARN] Invalid transfer function: " << TransferFunctionName
+         << endl;
+  }
+}
+
+Camera camera(vec3(0.5 * VolumeWidth, 1.5 * VolumeHeight, 0.5 * VolumeZCount));
 
 // Get interpolated color of pos using TriLinear method.
 RGBAColor colorInterpTriLinear(const vec3 &pos, const vec3 &bboxRTB) {
@@ -124,8 +188,8 @@ void fusionColorFrontToBack(vec4 &accmulated, const vec4 &sample) {
 
 // judge if point is inside bouding box
 bool inBBox(const vec3 &point, const vec3 &bboxRTB) {
-  return point.x >= 0 && point.x <= bboxRTB.x && point.y >= 0 &&
-         point.y <= bboxRTB.y && point.z >= 0 && point.z <= bboxRTB.z;
+  return point.x >= 0 && point.x < bboxRTB.x && point.y >= 0 &&
+         point.y < bboxRTB.y && point.z >= 0 && point.z < bboxRTB.z;
 }
 
 // helper for function `bool intersectTest`
@@ -187,7 +251,7 @@ void castOneRay(int x0, int y0, const vec3 &bboxRTB, const mat3 &rotateMat,
                 const vec4 &defaultColor = vec4(RGBBlack, 1.0)) {
   RGBAColor accumulated(0, 0, 0, 0); // acuumulated color during line integral
 
-  // we use parallel projection
+  // use parallel projection
   vec3 source(x0, y0, 0);
   // the default direction of ray is +z
   vec3 direction(initialEyeDirection);
@@ -215,10 +279,10 @@ void castOneRay(int x0, int y0, const vec3 &bboxRTB, const mat3 &rotateMat,
       // go forward
       samplePos += delta * direction;
     }
-    imagePlane[y0][x0] = RGBAColor(accumulated);
+    imagePlane[getPixelIndex(y0, x0)] = RGBAColor(accumulated);
     colorTime++;
   } else {
-    imagePlane[y0][x0] = RGBAColor(defaultColor);
+    imagePlane[getPixelIndex(y0, x0)] = RGBAColor(defaultColor);
   }
 }
 
@@ -245,10 +309,6 @@ void rayCasting() {
   // mat3 R = mat3(camera.getLookAt());
   mat3 R = eye3();
   vec3 C = vec3(initialEyePos);
-
-  float progress = 0.0;
-  const float progressPerRow = (float)ImagePlaneWidth / ImagePlaneSize;
-
   for (int r = 0; r < ImagePlaneHeight; r++) {
     for (int c = 0; c < ImagePlaneWidth; c++) {
       castOneRay(c, r, bboxRTB, R, initialEyePos);
@@ -257,10 +317,20 @@ void rayCasting() {
   }
 }
 
+void consoleLogWelcome() {
+  std::cout << "################################\n"
+               "# Viz Project 2 - Ray Casting  #\n"
+               "#  by 212138 - Zhuo Xu         #\n"
+               "# @ github.com/z0gSh1u/seu-viz #\n"
+               "################################\n";
+}
+
 int main() {
-  time_t tic = time(NULL);
 
   // initialize
+  consoleLogWelcome();
+  loadConfigFile();
+
   GLFWwindow *window =
       initGLWindow("2-raycasting", WINDOW_WIDTH, WINDOW_HEIGHT);
   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
@@ -269,15 +339,15 @@ int main() {
   readFileBinary(VolumePath, BytesPerVoxel, VoxelCount, volumeData);
 
   // FIXME
-  camera.rotate(vec2(-89, 0));
+  // camera.rotate(vec2(-89, 0));
 
+  time_t tic = time(NULL);
   cout << ">>> Start applying transfer function..." << endl;
-  // TF_SheppLogan(volumeData, VoxelCount, coloredVolumeData);
-  // TF_CTLung(volumeData, VoxelCount, coloredVolumeData);
-  TF_CTBone2(volumeData, VoxelCount, coloredVolumeData);
+  applyTransferFunction();
 
   cout << ">>> Start ray casting..." << endl;
   rayCasting();
+
   cout << endl;
 
   time_t toc = time(NULL);

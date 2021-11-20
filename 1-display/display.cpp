@@ -146,7 +146,7 @@ int main() {
 
     // draw the sphere
     helper.prepareUniforms(vector<UPrepInfo>{
-        {"uColor", normalize8bitColor(RGBColor(29, 156, 215)), "4fv"},
+        {"uColor", normalizeRGBColor(RGBColor(29, 156, 215)), "4fv"},
         {"uModelMatrix", scalem(vec3(0.2, 0.2, 0.2)) * translate(0, 0, 1.0),
          "Matrix4fv"},
     });
@@ -155,7 +155,7 @@ int main() {
 
     // draw the cube
     helper.prepareUniforms(vector<UPrepInfo>{
-        {"uColor", normalize8bitColor(RGBColor(127, 127, 127)), "4fv"},
+        {"uColor", normalizeRGBColor(RGBColor(127, 127, 127)), "4fv"},
         {"uModelMatrix",
          scalem(vec3(0.1, 0.1, 0.1)) * translate(0.5, 1.5, -1.0), "Matrix4fv"},
     });
@@ -240,7 +240,7 @@ void mouseMoveCallback(GLFWwindow *window, double offsetX, double offsetY) {
 
 void consoleLogWelcome() {
   std::cout << "################################\n"
-               "#  Viz Project 1               #\n"
+               "# Viz Project 1 - Basic OpenGL #\n"
                "#  by 212138 - Zhuo Xu         #\n"
                "# @ github.com/z0gSh1u/seu-viz #\n"
                "################################\n"
