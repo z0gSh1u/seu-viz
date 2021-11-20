@@ -10,5 +10,7 @@
   "ImagePlaneWidth": 64,
   "ImagePlaneHeight": 64,
 
-  "TransferFunction": "SheppLogan"
+  "TransferFunction": "SheppLogan",
+
+  "MultiThread": 1
 }

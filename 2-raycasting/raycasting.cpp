@@ -63,7 +63,7 @@ vec4 *coloredVolumeData; // RGBA
 // image plane related
 int ImagePlaneWidth;
 int ImagePlaneHeight;
-int ImagePlaneSize = ImagePlaneWidth * ImagePlaneHeight;
+int ImagePlaneSize;
 RGBAColor *imagePlane; // row-col order
 vec3 initialEyePos;
 vec3 initialEyeDirection(0, 0, 1); // refer to the geometry
@@ -80,17 +80,23 @@ float progressPerThreadPerRow;
 
 // ###### ###### ###### ###### ###### ###### ###### ###### ######
 
+// ReNow helper
+ReNowHelper helper;
+
 // preset rotate matrics
-vector<pair<string, mat3>> PresetRotateMatrics = {
-    {"Axial View Plane", mat3(eye4())},
-    {"Coronal View Plane", mat3(eye4() * rotateX(radians(-90)))},
-    {"Sagittal View Plane", mat3(eye4() * rotateY(radians(90)))}};
-int rotateMatrixIndex = 2;
+// [name, [textureID, rotateMatrix]]
+vector<pair<string, pair<short, mat3>>> PresetRotations = {
+    {"Axial View Plane", {-1, mat3(eye4())}},
+    {"Coronal View Plane", {-1, mat3(eye4() * rotateX(radians(-90)))}},
+    {"Sagittal View Plane", {-1, mat3(eye4() * rotateY(radians(90)))}}};
+int currentRotation = 0; // but default is Coronal View Plane
+// once ray casting is done for a specified plane, store it as texture in GPU
+// so that we can switch between them very fast
 
 // load config file from config.json
 void loadConfigFile() {
   Document d;
-  d.Parse(readFileText("./config2.json").c_str());
+  d.Parse(readFileText("./config.json").c_str());
 
   WINDOW_WIDTH = d["WindowWidth"].GetInt();
   WINDOW_HEIGHT = d["WindowHeight"].GetInt();
@@ -110,7 +116,8 @@ void loadConfigFile() {
   ImagePlaneSize = ImagePlaneWidth * ImagePlaneHeight;
   imagePlane = new RGBAColor[ImagePlaneSize];
 
-  initialEyePos = vec3(0, 0, VolumeZCount);
+  // FIXME
+  initialEyePos = vec3(0, 0, -VolumeZCount);
 
   TransferFunctionName = d["TransferFunction"].GetString();
 
@@ -326,12 +333,6 @@ void castSomeRays(int rowLow, int rowHigh) {
   }
 }
 
-// print name of current view plane
-void printCurrentViewPlane() {
-  cout << "[Current View Plane]\n"
-       << PresetRotateMatrics[rotateMatrixIndex].first << "\n";
-}
-
 void consoleLogWelcome() {
   cout << "################################\n"
           "# Viz Project 2 - Ray Casting  #\n"
@@ -356,34 +357,54 @@ void rayCasting() {
     threadPool.push_back(thread(castSomeRays, low, high));
   }
   for_each(threadPool.begin(), threadPool.end(), [=](thread &t) { t.join(); });
+  // store it as texture
+  GL_OBJECT_ID tex = helper.createTexture2D(
+      imagePlane, GL_RGBA, ImagePlaneWidth, ImagePlaneHeight, GL_FLOAT);
+  PresetRotations[currentRotation].second.first = tex;
 }
 
 void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __) {
   if (action == GLFW_PRESS) {
     // change between view planes
     if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
-      // prepare for a new rendering
-      colorTimes = 0;
-      progress = 0.0;
-      // switch rotate matrix
-      rotateMatrixIndex = (rotateMatrixIndex + 1) % PresetRotateMatrics.size();
-      rotateMatrix = PresetRotateMatrics[rotateMatrixIndex].second;
-      cout << ">>> Restart ray casting using " << multiThread << " threads..."
-           << endl;
-      // print current view plane name
-      cout << "[Current View Plane]: "
-           << PresetRotateMatrics[rotateMatrixIndex].first << "\n";
-      // restart ray casting
-      time_t tic = time(NULL);
-      rayCasting();
-      time_t toc = time(NULL);
-      cout << endl
-           << "# Ray intersects: " << colorTimes << endl
-           << "# Ray cast: " << ImagePlaneSize << endl
-           << "Time elapsed: " << toc - tic << " secs." << endl
-           << endl
-           << ">>> Start rendering..." << endl
-           << endl;
+      // check if we have already cast rays under that rotation
+      currentRotation = (currentRotation + 1) % PresetRotations.size();
+      int texId = PresetRotations[currentRotation].second.first;
+      if (PresetRotations[currentRotation].second.first != -1) {
+        cout << ">>> Already finished the cast before. Read from texture..."
+             << endl;
+        // print current view plane name
+        cout << "[Current View Plane]: "
+             << PresetRotations[currentRotation].first << "\n";
+      } else {
+        // prepare for a new rendering
+        colorTimes = 0;
+        progress = 0.0;
+        // switch rotate matrix
+        rotateMatrix = PresetRotations[currentRotation].second.second;
+        cout << ">>> Restart ray casting using " << multiThread << " threads..."
+             << endl;
+        // print current view plane name
+        cout << "[Current View Plane]: "
+             << PresetRotations[currentRotation].first << "\n";
+        // restart ray casting
+        time_t tic = time(NULL);
+        rayCasting();
+        time_t toc = time(NULL);
+        cout << endl
+             << "# Ray intersects: " << colorTimes << endl
+             << "# Ray cast: " << ImagePlaneSize << endl
+             << "Time elapsed: " << toc - tic << " secs." << endl
+             << endl
+             << ">>> Start rendering..." << endl
+             << endl;
+      }
+      texId = PresetRotations[currentRotation].second.first;
+      // we must have the image as texture now
+      // just use the texture in GPU
+      helper.prepareUniforms(vector<UPrepInfo>{
+          {"uTexture", texId, "1i"},
+      });
     }
   }
 }
@@ -399,6 +420,16 @@ int main() {
   glfwSetKeyCallback(window, keyboardCallback);
   glClearColor(0.9, 0.9, 0.9, 1);
 
+  // take over management
+  helper = ReNowHelper(window);
+  // organize the program
+  GL_SHADER_ID vShader =
+                   helper.createShader(GL_VERTEX_SHADER, "./shader/vMain.glsl"),
+               fShader = helper.createShader(GL_FRAGMENT_SHADER,
+                                             "./shader/fMain.glsl");
+  GL_PROGRAM_ID mainProgram = helper.createProgram(vShader, fShader);
+  helper.switchProgram(mainProgram);
+
   readFileBinary(VolumePath, BytesPerVoxel, VoxelCount, volumeData);
 
   time_t tic = time(NULL);
@@ -410,15 +441,30 @@ int main() {
   // simulate keyboard press to start rendering
   keyboardCallback(NULL, GLFW_KEY_ENTER, -1, GLFW_PRESS, -1);
 
+  const int twoDPoints = 4;
+  float vBack[twoDPoints * 2] = {-1, -1, 1,  -1,
+                                 1,  1,  -1, 1}; // vertices of background
+  float vtBack[twoDPoints * 2] = {0, 0, 1, 0, 1, 1, 0, 1}; // texture coords
+  GL_OBJECT_ID vBackBuf = helper.createVBO(), vtBackBuf = helper.createVBO();
+
+  helper.prepareAttributes(vector<APrepInfo>{
+      {vBackBuf, vBack, twoDPoints * 2, "aPosition", 2, GL_FLOAT},
+      {vtBackBuf, vtBack, twoDPoints * 2, "aTexCoord", 2, GL_FLOAT},
+  });
+
   // main loop
   while (!glfwWindowShouldClose(window)) {
     glClear(GL_COLOR_BUFFER_BIT);
-    glDrawPixels(ImagePlaneWidth, ImagePlaneHeight, GL_RGBA, GL_FLOAT,
-                 imagePlane);
+
+    // FIXME: MAKE IT BETTER! NO MORE glDrawPixels (deprecated API)
+    // glDrawPixels(ImagePlaneWidth, ImagePlaneHeight, GL_RGBA, GL_FLOAT,
+    //              imagePlane);
+    glDrawArrays(GL_TRIANGLE_FAN, 0, twoDPoints);
     glfwSwapBuffers(window);
     glfwPollEvents();
   }
 
+  helper.freeAllocatedObjects();
   glfwTerminate();
   return 0;
 }

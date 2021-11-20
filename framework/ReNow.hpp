@@ -239,6 +239,21 @@ public:
     }
   }
 
+  // Create a Texture2D from pixels.
+  GL_OBJECT_ID createTexture2D(const void *pixels, GLint colorFormat, int w,
+                               int h, GLenum pixelType) {
+    GL_OBJECT_ID tex;
+    glCreateTextures(GL_TEXTURE_2D, 1, &tex);
+    bindTexture2D(tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, colorFormat, w, h, 0, colorFormat, pixelType,
+                 pixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    return tex;
+  }
+
+  // Bind Texture 2D.
+  void bindTexture2D(GL_OBJECT_ID tex) { glBindTexture(GL_TEXTURE_2D, tex); }
+
   // Check if user is pressing `keyCode` key.
   bool nowPressing(int keyCode) {
     return glfwGetKey(_window, keyCode) == GLFW_PRESS;
@@ -327,7 +342,7 @@ vector<float> analyzeFtoV(const OBJProcessor &proc, const string &kind) {
   return mesh;
 }
 
-// Alias some useful matrices
+// Aliases of some useful matrices
 
 // I_4 matrix.
 mat4 eye4() { return mat4(1.0); }
