@@ -1,7 +1,7 @@
 #pragma once
 
 // Utilities of ReNow Framework
-// by z0gSh1u @ https://github.com/z0gSh1u/seu-viz
+// by z0gSh1u (Zhuo Xu) @ https://github.com/z0gSh1u/seu-viz
 // See:
 // https://github.com/z0gSh1u/typed-webgl
 // https://github.com/z0gSh1u/renow-ts

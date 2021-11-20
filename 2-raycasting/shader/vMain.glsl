@@ -8,8 +8,8 @@ varying vec2 vTexCoord;
 void main() {
 
   gl_Position.xy = aPosition.xy;
-  // gl_Position.zw = vec2(0.99, 1.0); // 0.99 so that the whole image can be rendered
-
+  gl_Position.zw = vec2(1.0, 1.0);
+  
   vTexCoord = aTexCoord;
 
 }

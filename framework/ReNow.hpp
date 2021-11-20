@@ -1,7 +1,7 @@
 #pragma once
 
 // ReNow Framework
-// by z0gSh1u @ https://github.com/z0gSh1u/seu-viz
+// by z0gSh1u (Zhuo Xu) @ https://github.com/z0gSh1u/seu-viz
 // See:
 // https://github.com/z0gSh1u/typed-webgl
 // https://github.com/z0gSh1u/renow-ts
@@ -140,10 +140,13 @@ private:
   GL_PROGRAM_ID _currentProgram;
   vector<GL_OBJECT_ID> _allocatedVAOs;
   vector<GL_OBJECT_ID> _allocatedVBOs;
+  bool _alreadyInitTexParams;
 
 public:
-  ReNowHelper() : _window(nullptr), _currentProgram(-1) {}
-  ReNowHelper(GLFWwindow *window) : _window(window), _currentProgram(-1) {}
+  ReNowHelper()
+      : _window(nullptr), _currentProgram(-1), _alreadyInitTexParams(false) {}
+  ReNowHelper(GLFWwindow *window)
+      : _window(window), _currentProgram(-1), _alreadyInitTexParams(false) {}
 
   // Create a program.
   GL_PROGRAM_ID
@@ -240,14 +243,24 @@ public:
   }
 
   // Create a Texture2D from pixels.
-  GL_OBJECT_ID createTexture2D(const void *pixels, GLint colorFormat, int w,
-                               int h, GLenum pixelType) {
+  GL_OBJECT_ID createTexture2D(void *pixels, GLint colorFormat, int w, int h,
+                               GLenum pixelType) {
+    if (!_alreadyInitTexParams) {
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+      _alreadyInitTexParams = true;
+    }
+
     GL_OBJECT_ID tex;
-    glCreateTextures(GL_TEXTURE_2D, 1, &tex);
-    bindTexture2D(tex);
+    glGenTextures(1, &tex);
+    glActiveTexture(GL_TEXTURE0 + tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
     glTexImage2D(GL_TEXTURE_2D, 0, colorFormat, w, h, 0, colorFormat, pixelType,
                  pixels);
     glGenerateMipmap(GL_TEXTURE_2D);
+    ASSERT(tex > 0, "Create Texture2D failed.");
     return tex;
   }
 

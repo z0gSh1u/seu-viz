@@ -1,7 +1,7 @@
 #pragma once
 
 // Phong Light Model of ReNow Framework
-// by z0gSh1u @ https://github.com/z0gSh1u/seu-viz
+// by z0gSh1u (Zhuo Xu) @ https://github.com/z0gSh1u/seu-viz
 // See:
 // https://github.com/z0gSh1u/typed-webgl
 // https://github.com/z0gSh1u/renow-ts
@@ -48,27 +48,27 @@ public:
 
   // setters
   void setAmbientColor(RGBColor color) {
-    this->_ambientColor = normalize8bitColor(color);
+    this->_ambientColor = normalizeRGBColor(color);
   }
 
   void setDiffuseColor(RGBColor color) {
-    this->_diffuseColor = normalize8bitColor(color);
+    this->_diffuseColor = normalizeRGBColor(color);
   }
 
   void setSpecularColor(RGBColor color) {
-    this->_specularColor = normalize8bitColor(color);
+    this->_specularColor = normalizeRGBColor(color);
   }
 
   void setAmbientMaterial(RGBColor color) {
-    this->_ambientMaterial = normalize8bitColor(color);
+    this->_ambientMaterial = normalizeRGBColor(color);
   }
 
   void setDiffuseMaterial(RGBColor color) {
-    this->_diffuseMaterial = normalize8bitColor(color);
+    this->_diffuseMaterial = normalizeRGBColor(color);
   }
 
   void setSpecularMaterial(RGBColor color) {
-    this->_specularMaterial = normalize8bitColor(color);
+    this->_specularMaterial = normalizeRGBColor(color);
   }
 
   void setMaterialShiness(float shiness) { this->_materialShiness = shiness; }
@@ -84,12 +84,12 @@ PhongLightModel::PhongLightModel(
     RGBColor ambientColor, RGBColor ambientMaterial, RGBColor diffuseColor,
     RGBColor diffuseMaterial, RGBColor specularColor, RGBColor specularMaterial,
     float materialShiness) {
-  this->_ambientColor = normalize8bitColor(ambientColor);
-  this->_ambientMaterial = normalize8bitColor(ambientMaterial);
-  this->_diffuseColor = normalize8bitColor(diffuseColor);
-  this->_diffuseMaterial = normalize8bitColor(diffuseMaterial);
-  this->_specularColor = normalize8bitColor(specularColor);
-  this->_specularMaterial = normalize8bitColor(specularMaterial);
+  this->_ambientColor = normalizeRGBColor(ambientColor);
+  this->_ambientMaterial = normalizeRGBColor(ambientMaterial);
+  this->_diffuseColor = normalizeRGBColor(diffuseColor);
+  this->_diffuseMaterial = normalizeRGBColor(diffuseMaterial);
+  this->_specularColor = normalizeRGBColor(specularColor);
+  this->_specularMaterial = normalizeRGBColor(specularMaterial);
   this->_materialShiness = materialShiness;
   // compute Phong light model products
   this->recalcProducts();
