@@ -1,1 +1,1 @@
-Drawn by z0gSh1u using Blender ( https://store.steampowered.com/app/365670/Blender/ ).
+Drawn by z0gSh1u (Zhuo Xu) using Blender ( https://store.steampowered.com/app/365670/Blender/ ).

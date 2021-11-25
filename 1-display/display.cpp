@@ -19,6 +19,8 @@ using glm::mat4;
 using glm::vec2;
 using glm::vec3;
 using glm::vec4;
+using std::cout;
+using std::endl;
 
 using namespace zx;
 
@@ -47,10 +49,10 @@ const float far = 2.8;
 // camera
 Camera camera(vec3(-0.35, 0.15, -0.15));
 const float cameraMoveSpeed = 0.001;
-const float cameraRotateAnglePerPixel = 0.1;
+const float cameraRotateAnglePerPixel = 0.2;
 
 // shining
-vec3 lightPos(0.2, 0.2, 0.2);
+vec3 lightPos(0.1, 0.1, 0.1);
 unsigned short specularColorIndex = 0, specularMaterialIndex = 0;
 vector<RGBColor> specularColorPresets = {
     RGBColor(255, 255, 255), RGBColor(255, 0, 0),   RGBColor(0, 255, 0),
@@ -95,8 +97,8 @@ int main() {
   GL_OBJECT_ID sphereVBuf = helper.createVBO(), sphereNBuf = helper.createVBO();
   GL_OBJECT_ID cubeVBuf = helper.createVBO(), cubeNBuf = helper.createVBO();
 
-  std::cout << ">>> Start loading model .obj file, this might take a while..."
-            << std::endl;
+  cout << ">>> Start loading model .obj file, this might take a while..."
+            << endl;
   // load the sphere and perpare to draw it
   helper.switchVAO(sphereVAO);
   OBJProcessor sphereOBJProc(readFileText("./model/UnitSphere.obj"));
@@ -117,7 +119,7 @@ int main() {
       {cubeNBuf, &(cubeVns[0]), cubeVns.size(), "aNormal", 3, GL_FLOAT},
   });
 
-  std::cout << ">>> Start rendering." << std::endl;
+  cout << ">>> Start rendering." << endl;
   // main loop
   while (!glfwWindowShouldClose(window)) {
     // handler frame-level keyboard event
@@ -205,7 +207,7 @@ void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __) {
       specularColorIndex %= specularColorPresets.size();
       phong.setSpecularColor(specularColorPresets[specularColorIndex]);
       phong.recalcProducts();
-      std::cout << "Changed specularColor to "
+      cout << "Changed specularColor to "
                 << rgbColorToString(specularColorPresets[specularColorIndex])
                 << "\n";
     }
@@ -214,7 +216,7 @@ void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __) {
       specularMaterialIndex %= specularMaterialPresets.size();
       phong.setSpecularMaterial(specularMaterialPresets[specularMaterialIndex]);
       phong.recalcProducts();
-      std::cout << "Changed specularMaterial to "
+      cout << "Changed specularMaterial to "
                 << rgbColorToString(
                        specularMaterialPresets[specularMaterialIndex])
                 << "\n";
@@ -225,7 +227,7 @@ void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __) {
       shiness = zx::minmaxClip(shiness, 0.5, 30);
       phong.setMaterialShiness(shiness);
       phong.recalcProducts();
-      std::cout << "Changed shiness to " << shiness << "\n";
+      cout << "Changed shiness to " << shiness << "\n";
     }
   }
 }
@@ -239,7 +241,7 @@ void mouseMoveCallback(GLFWwindow *window, double offsetX, double offsetY) {
 }
 
 void consoleLogWelcome() {
-  std::cout << "################################\n"
+  cout << "################################\n"
                "# Viz Project 1 - Basic OpenGL #\n"
                "#  by 212138 - Zhuo Xu         #\n"
                "# @ github.com/z0gSh1u/seu-viz #\n"

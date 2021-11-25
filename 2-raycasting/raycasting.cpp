@@ -488,7 +488,7 @@ int main() {
     // glDrawPixels(ImagePlaneWidth, ImagePlaneHeight, GL_RGBA, GL_FLOAT,
     //              imagePlane);
 
-    // By using glDraw* API, we can make use of shaders and texture storage.
+    // By using `glDrawArrays` API, we can make use of shaders and texture storage.
     glDrawArrays(GL_TRIANGLE_FAN, 0, nPoints);
 
     glfwSwapBuffers(window);
