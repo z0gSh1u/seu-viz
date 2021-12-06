@@ -10,7 +10,7 @@
   "ImagePlaneWidth": 512,
   "ImagePlaneHeight": 512,
 
-  "TransferFunction": "CT_Bone",
+  "TransferFunction": "CT_BoneOnly",
 
-  "MultiThread": 4
+  "MultiThread": 8
 }

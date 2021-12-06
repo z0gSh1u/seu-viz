@@ -4,6 +4,7 @@
 // by z0gSh1u @ https://github.com/z0gSh1u/seu-viz
 // ################################################
 
+// REMEMBER TO COMPILE IN `RELEASE`, OR IT WILL BE RATHER SLOW
 // [About the geometry]
 // PLEASE Refer to the document for coordinate system geometry definition!
 // [About the bounding box]
@@ -174,6 +175,8 @@ void applyTransferFunction() {
     TF_CT_Lung(volumeData, VoxelCount, coloredVolumeData);
   } else if (TransferFunctionName == "CT_Bone") {
     TF_CT_Bone(volumeData, VoxelCount, coloredVolumeData);
+  } else if (TransferFunctionName == "CT_BoneOnly") {
+    TF_CT_BoneOnly(volumeData, VoxelCount, coloredVolumeData);
   } else {
     cerr << "[WARN] Invalid transfer function: " << TransferFunctionName
          << endl;
@@ -488,7 +491,8 @@ int main() {
     // glDrawPixels(ImagePlaneWidth, ImagePlaneHeight, GL_RGBA, GL_FLOAT,
     //              imagePlane);
 
-    // By using `glDrawArrays` API, we can make use of shaders and texture storage.
+    // By using `glDrawArrays` API, we can make use of shaders and texture
+    // storage.
     glDrawArrays(GL_TRIANGLE_FAN, 0, nPoints);
 
     glfwSwapBuffers(window);

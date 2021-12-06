@@ -36,21 +36,48 @@ void TF_SheppLogan(const uint16 *volumeData, int voxelCount,
 // So the actual HU value is `v-1024` if rescaling function
 // is y=1*x-1024.
 
-void TF_CT_Bone(const uint16 *volumeData, int voxelCount,
-                vec4 *coloredVolumeData) {
+void TF_CT_BoneOnly(const uint16 *volumeData, int voxelCount,
+                    vec4 *coloredVolumeData) {
   for (int i = 0; i < voxelCount; i++) {
     uint16 v = volumeData[i];
     RGBAColor color;
     if (v < 200) {                           // [~, 200] // air
       color = RGBAColor(255, 255, 255, 0.0); // transparent
     } else if (v < 950) {                    // [200, 990] // soft tissue
-      color = RGBAColor(250, 235, 215, 0.05); // skin color
+      color = RGBAColor(250, 235, 215, 0.0); // skin color
     } else if (v < 1150) {                   // [990, 1150] // muscle, heart
-      color = RGBAColor(230, 0, 26, 0.0);    // light red
+      color = RGBAColor(222, 129, 46, 0.0);  // light red
     } else if (v < 2200) {                   // [1150, 2200] // bone
-      color = RGBAColor(119, 136, 153, 0.5); // light blue
+      int tmp = v - 1150;
+      float yz = tmp / (2200 - 1150);
+      vec3 xx = yz * vec3(30, 30, 30);
+      xx.x = int(xx.x);
+      xx.y = int(xx.y);
+      xx.z = int(xx.z);
+      vec3 rgb = vec3(200, 200, 200) + xx;
+      color = RGBAColor(rgb, 0.06);          // light blue
     } else {                                 // [2200, ~] // invalid value
       color = RGBAColor(255, 255, 255, 0.0); // transparent
+    }
+    coloredVolumeData[i] = normalizeRGBAColor(color);
+  }
+}
+
+void TF_CT_Bone(const uint16 *volumeData, int voxelCount,
+                vec4 *coloredVolumeData) {
+  for (int i = 0; i < voxelCount; i++) {
+    uint16 v = volumeData[i];
+    RGBAColor color;
+    if (v < 200) {                            // [~, 200] // air
+      color = RGBAColor(255, 255, 255, 0.0);  // transparent
+    } else if (v < 950) {                     // [200, 990] // soft tissue
+      color = RGBAColor(250, 235, 215, 0.05); // skin color
+    } else if (v < 1150) {                    // [990, 1150] // muscle, heart
+      color = RGBAColor(230, 0, 26, 0.0);     // light red
+    } else if (v < 2200) {                    // [1150, 2200] // bone
+      color = RGBAColor(119, 136, 153, 0.5);  // light blue
+    } else {                                  // [2200, ~] // invalid value
+      color = RGBAColor(255, 255, 255, 0.0);  // transparent
     }
     coloredVolumeData[i] = normalizeRGBAColor(color);
   }
