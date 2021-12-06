@@ -12,5 +12,5 @@
 
   "TransferFunction": "CT_BoneOnly",
 
-  "MultiThread": 8
+  "MultiThread": 4
 }

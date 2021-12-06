@@ -2,6 +2,7 @@
   "files.associations": {
     "*.wxml": "html",
     "*.wxss": "css",
+    "*.cu": "cpp",
     "fstream": "cpp",
     "vector": "cpp",
     "xstring": "cpp",
@@ -66,6 +67,10 @@
     "optional": "cpp",
     "ratio": "cpp",
     "stop_token": "cpp",
-    "thread": "cpp"
+    "thread": "cpp",
+    "functional": "cpp",
+    "list": "cpp",
+    "unordered_map": "cpp",
+    "xhash": "cpp"
   }
 }

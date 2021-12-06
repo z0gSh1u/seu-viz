@@ -9,6 +9,11 @@ using glm::vec4;
 
 namespace zx {
 
+void ControlPoint() {
+  
+}
+
+
 // TF for SheppLogan demo (shep3d_64.uint16.raw)
 void TF_SheppLogan(const uint16 *volumeData, int voxelCount,
                    vec4 *coloredVolumeData) {
