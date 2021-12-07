@@ -6,7 +6,7 @@
 
 // TODO
 // 1 - Traceball  [OK!]
-// 2 - Lighting   [TODO]
+// 2 - Lighting   [OK!]
 // 3 - TF Auto or design  [TODO]
 
 // [compile]
@@ -48,8 +48,6 @@ using glm::vec3;
 using glm::vec4;
 using rapidjson::Document;
 
-#define ENABLE_LIGHTING true
-
 // Here are some parameters that will be read from config
 const string CONFIG_FILE = "./config.json";
 // window
@@ -80,36 +78,34 @@ map<string, function<void(const uint16 *a, int b, vec4 *c)>>
                            {"CT_Lung", TF_CT_Lung},
                            {"CT_Bone", TF_CT_Bone},
                            {"CT_BoneOnly", TF_CT_BoneOnly}};
-
 // number of threads
 int multiThread;
 // for progress bar printing
 float progress = 0.0;
 float progressPerThreadPerRow;
+int coloringCount = 0;
 // observing
-vec3 initEyePos;
+int currentTexId = -1;       // image plane is stored as texture
+vec3 initEyePos(0, 0, 2048); // somewhere far Enough
 vec3 normalizedEyePos(0, 0, 1);
-
 const vec3 initEyeDirection(0, 0, -1);
-mat3 ctm; // current transform matrix
-
-const float ARROW_KEY_TRACEBALL_DELTA = 0.2;
-
+mat3 currentRotateMatrix; // current rotate matrix
+#define ARROW_KEY_TRACEBALL_DELTA 0.2
+void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __);
+// lighting
+const vec3 lightDirection(0, 0, -1);
+const RGBColor diffuseColor(1, 1, 1);
+const RGBColor ambientColor(1, 1, 1);
+const float kAmbient = 0.5;
+#define ENABLE_LIGHTING true // Whether to apply lighting to volume data
 // ReNow helper
 ReNowHelper helper;
 
-// TODO how come
-mat3 AdaptedLookAt(vec3 eye, vec3 at, vec3 up) {
-  if (eye == at) {
-    return eye3();
-  }
-  vec3 v = glm::normalize(eye - at);
-  vec3 n = glm::normalize(glm::cross(up, v));
-  vec3 u = glm::normalize(glm::cross(v, n));
-  return mat3(n, u, v);
+// Truncate the translation vector (last column) in lookAt matrix,
+// since we handle translation mannually x'=xR+T
+mat3 UntranslatedLookAt(vec3 eye, vec3 at, vec3 up) {
+  return mat3(glm::lookAt(eye, at, up));
 }
-
-void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __);
 
 // load config file from config.json
 void loadConfigFile() {
@@ -123,7 +119,6 @@ void loadConfigFile() {
   VolumeWidth = d["VolumeWidth"].GetInt();
   VolumeHeight = d["VolumeHeight"].GetInt();
   VolumeZCount = d["VolumeZCount"].GetInt();
-  initEyePos = vec3(0, 0, 2048); // FIXME FAR
 
   bboxRTB = vec3(VolumeWidth - 1, VolumeHeight - 1, VolumeZCount - 1);
   PixelPerSlice = VolumeWidth * VolumeHeight;
@@ -160,12 +155,13 @@ int getVoxel(int x, int y, int z) { return volumeData[getVoxelIndex(x, y, z)]; }
 
 // Get normal at point.
 vec3 calcNormal(int x, int y, int z) {
-  float x1 = x > 0 ? getVoxel(x - 1, y, z) : 0,
-        x2 = x < VolumeWidth - 1 ? getVoxel(x + 1, y, z) : 0,
-        y1 = y > 0 ? getVoxel(x, y - 1, z) : 0,
-        y2 = y < VolumeHeight - 1 ? getVoxel(x, y + 1, z) : 0,
-        z1 = z > 0 ? getVoxel(x, y, z - 1) : 0,
-        z2 = z < VolumeZCount - 1 ? getVoxel(x, y, z + 1) : 0;
+  float defaultValue = getVoxel(x, y, z);
+  float x1 = x > 0 ? getVoxel(x - 1, y, z) : defaultValue,
+        x2 = x < VolumeWidth - 1 ? getVoxel(x + 1, y, z) : defaultValue,
+        y1 = y > 0 ? getVoxel(x, y - 1, z) : defaultValue,
+        y2 = y < VolumeHeight - 1 ? getVoxel(x, y + 1, z) : defaultValue,
+        z1 = z > 0 ? getVoxel(x, y, z - 1) : defaultValue,
+        z2 = z < VolumeZCount - 1 ? getVoxel(x, y, z + 1) : defaultValue;
   // normalized normal equal to normalized gradient
   vec3 gradient(x1 - x2, y1 - y2, z1 - z2);
   return glm::normalize(gradient);
@@ -283,8 +279,6 @@ bool intersectTest(const vec3 &origin, const vec3 &direction,
   return true;
 }
 
-int colorTimes = 0;
-
 // Implement of simple progressbar
 // @see https://stackoverflow.com/questions/14539867/
 void updateProgressBar(float progress, int barWidth = 50) {
@@ -297,16 +291,12 @@ void updateProgressBar(float progress, int barWidth = 50) {
   cout.flush();
 }
 
-const vec3 lightDirection(0, 0, -1);
-const vec3 diffuseColor(1, 1, 1);
-const vec3 ambientColor(1, 1, 1);
-const float kAmbient = 0.5;
-
 // Apply lighting (simplified Phong without specular) at sample point.
 void applyLighting(RGBAColor &src, const vec3 &pos) {
   vec3 normal = calcNormal(pos.x, pos.y, pos.z);
   vec3 rgb(src.r, src.g, src.b);
   float kDiffuse = max(glm::dot(normal, lightDirection), 0.0f);
+
   vec3 colored = (kDiffuse * diffuseColor + kAmbient * ambientColor) * rgb;
   zx::clipRGB(colored);
   for (int i = 0; i < 3; i++) {
@@ -327,9 +317,9 @@ void castOneRay(int u, int v, const vec3 &bboxRTB, const mat3 &rotateMat,
   vec3 direction(initEyeDirection);
   // transform to object coordinate
   // [xobj, yobj, zobj](t) = [x, y, tz]R+T
-  source = source * ctm;
-  // the direction of ray is shouldReCast too
-  direction = glm::normalize(direction * ctm);
+  source = source * rotateMat;
+  // the direction of ray is changed too
+  direction = glm::normalize(direction * rotateMat);
 
   vec3 entry;            // entry point of ray into bounding box
   vec3 samplePos;        // current voxel coordinate
@@ -345,19 +335,17 @@ void castOneRay(int u, int v, const vec3 &bboxRTB, const mat3 &rotateMat,
     while (inBBox(samplePos, bboxRTB) && accumulated.a < 1.0) {
       // get sampleColor via interpolation
       sampleColor = colorInterpTriLinear(samplePos, bboxRTB);
-
+      // light it
       if (ENABLE_LIGHTING) {
-        // light it
         applyLighting(sampleColor, samplePos);
       }
-
       // Cout = Cin + (1-ain)aiCi
       fusionColorFrontToBack(accumulated, sampleColor);
       // go forward
       samplePos += delta * direction;
     }
     imagePlane[getPixelIndex(v, u)] = RGBAColor(accumulated);
-    colorTimes++;
+    coloringCount++;
   } else {
     imagePlane[getPixelIndex(v, u)] = RGBAColor(defaultColor);
   }
@@ -365,12 +353,9 @@ void castOneRay(int u, int v, const vec3 &bboxRTB, const mat3 &rotateMat,
 
 // Written in this form to support multi-thread processing.
 void castSomeRays(int rowLow, int rowHigh) {
-  mat3 R = eye4();
-  // mat3 R = eye4();
-  vec3 T = initEyePos;
   for (int r = rowLow; r < rowHigh; r++) {
     for (int c = 0; c < ImagePlaneWidth; c++) {
-      castOneRay(c, r, bboxRTB, R, T);
+      castOneRay(c, r, bboxRTB, currentRotateMatrix, initEyePos);
     }
     if (rowLow == 0) { // the first thread
       updateProgressBar(progress = progress + progressPerThreadPerRow);
@@ -378,7 +363,7 @@ void castSomeRays(int rowLow, int rowHigh) {
   }
 }
 
-// The very main: Multi-thread Ray Casting
+// Multi-thread Ray Casting
 void castAllRays() {
   vector<thread> threadPool;
   const float sharePerThread = (float)1 / multiThread;
@@ -392,16 +377,19 @@ void castAllRays() {
   for_each(threadPool.begin(), threadPool.end(), [=](thread &t) { t.join(); });
 }
 
-int currentTexId = -1;
+// The very main
 void rayCasting() {
   // prepare for a new rendering
-  colorTimes = 0;
+  coloringCount = 0;
   progress = 0.0;
+
   cout << ">>> Restart ray casting using " << multiThread << " threads..."
        << endl;
-  // restart ray casting
   time_t tic = time(NULL);
   castAllRays();
+  time_t toc = time(NULL);
+
+  // store image plane
   if (currentTexId != -1) {
     GL_OBJECT_ID x = currentTexId;
     glDeleteTextures(1, &x);
@@ -409,9 +397,9 @@ void rayCasting() {
   GL_OBJECT_ID texId = helper.createTexture2D(
       imagePlane, GL_RGBA, ImagePlaneWidth, ImagePlaneHeight, GL_FLOAT);
   currentTexId = texId;
-  time_t toc = time(NULL);
+
   cout << endl
-       << "# Ray intersect: " << colorTimes << endl
+       << "# Ray intersect: " << coloringCount << endl
        << "# Ray cast: " << ImagePlaneSize << endl
        << "Time elapsed: " << toc - tic << " secs." << endl
        << endl
@@ -436,11 +424,11 @@ int main() {
   // initialize
   consoleLogWelcome();
   loadConfigFile();
+
   GLFWwindow *window =
       initGLWindow("2-raycasting", WINDOW_WIDTH, WINDOW_HEIGHT);
   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
-  // glfwSetKeyCallback(window, keyboardCallback);
-  glClearColor(0.9, 0.9, 0.9, 1);
+  glClearColor(0, 0, 0, 1);
   glfwSetKeyCallback(window, keyboardCallback);
 
   // take over management
@@ -456,7 +444,7 @@ int main() {
   // load volume data
   readFileBinary(VolumePath, BytesPerVoxel, VoxelCount, volumeData);
 
-  // start the main procedure
+  // apply transfer function
   time_t tic = time(NULL);
   cout << ">>> Start applying transfer function..." << endl;
   cout << "[Transfer Function Name]: " << TransferFunctionName << endl;
@@ -464,7 +452,6 @@ int main() {
   cout << endl;
 
   // render the image plane just as background
-  // that is the same as "display image"
   const int nPoints = 4;
   float vBack[nPoints * 2] = {-1, -1, 1,  -1,
                               1,  1,  -1, 1}; // vertices of background
@@ -475,13 +462,16 @@ int main() {
   while (!glfwWindowShouldClose(window)) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    ctm = AdaptedLookAt(normalizedEyePos, vec3(0, 0, 0), vec3(0, 1, 0));
-
-    helper.prepareAttributes(vector<APrepInfo>{
-        {vBackBuf, vBack, nPoints * 2, "aPosition", 2, GL_FLOAT},
-        {vtBackBuf, vtBack, nPoints * 2, "aTexCoord", 2, GL_FLOAT},
-    });
     if (shouldReCast) {
+      // resend vertices
+      helper.prepareAttributes(vector<APrepInfo>{
+          {vBackBuf, vBack, nPoints * 2, "aPosition", 2, GL_FLOAT},
+          {vtBackBuf, vtBack, nPoints * 2, "aTexCoord", 2, GL_FLOAT},
+      });
+      // recalculate the rotate matrix
+      currentRotateMatrix =
+          UntranslatedLookAt(normalizedEyePos, vec3(0, 0, 0), vec3(0, 1, 0));
+      // recast the rays
       rayCasting();
       shouldReCast = false;
     }
@@ -497,6 +487,7 @@ int main() {
   return 0;
 }
 
+// support observation
 void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __) {
   if (action == GLFW_PRESS) {
     if (key == GLFW_KEY_LEFT) {
