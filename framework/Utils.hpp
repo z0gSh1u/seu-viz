@@ -132,13 +132,18 @@ float minmaxClip(float v, float min, float max) {
   return v < min ? min : v > max ? max : v;
 }
 
-// MIN-MAX clip vec4
-vec4 clipRGBA(const vec4 &rgba, float min = 0, float max = 1) {
-  vec4 res;
-  for (int i = 0; i < 4; i++) {
-    res[i] = zx::minmaxClip(rgba[i], min, max);
+// MIN-MAX clip vec3
+void clipRGB(vec3 &rgb, float min = 0, float max = 1) {
+  for (int i = 0; i < 3; i++) {
+    rgb[i] = zx::minmaxClip(rgb[i], min, max);
   }
-  return res;
+}
+
+// MIN-MAX clip vec4
+void clipRGBA(vec4 &rgba, float min = 0, float max = 1) {
+  for (int i = 0; i < 4; i++) {
+    rgba[i] = zx::minmaxClip(rgba[i], min, max);
+  }
 }
 
 // Swap two values of type T.

@@ -48,6 +48,8 @@ using glm::vec3;
 using glm::vec4;
 using rapidjson::Document;
 
+#define ENABLE_LIGHTING true
+
 // Here are some parameters that will be read from config
 const string CONFIG_FILE = "./config.json";
 // window
@@ -153,13 +155,21 @@ int getVoxelIndex(int x, int y, int z) {
   return PixelPerSlice * z + VolumeWidth * y + x;
 }
 
-void calcNormals() {
-  // TODO
-  // use diff
-}
-
 // Get voxel value according to (x, y, z).
 int getVoxel(int x, int y, int z) { return volumeData[getVoxelIndex(x, y, z)]; }
+
+// Get normal at point.
+vec3 calcNormal(int x, int y, int z) {
+  float x1 = x > 0 ? getVoxel(x - 1, y, z) : 0,
+        x2 = x < VolumeWidth - 1 ? getVoxel(x + 1, y, z) : 0,
+        y1 = y > 0 ? getVoxel(x, y - 1, z) : 0,
+        y2 = y < VolumeHeight - 1 ? getVoxel(x, y + 1, z) : 0,
+        z1 = z > 0 ? getVoxel(x, y, z - 1) : 0,
+        z2 = z < VolumeZCount - 1 ? getVoxel(x, y, z + 1) : 0;
+  // normalized normal equal to normalized gradient
+  vec3 gradient(x1 - x2, y1 - y2, z1 - z2);
+  return glm::normalize(gradient);
+}
 
 // Apply transfer function to fill `coloredVolumeData`.
 void applyTransferFunction(const string &name) {
@@ -287,6 +297,23 @@ void updateProgressBar(float progress, int barWidth = 50) {
   cout.flush();
 }
 
+const vec3 lightDirection(0, 0, -1);
+const vec3 diffuseColor(1, 1, 1);
+const vec3 ambientColor(1, 1, 1);
+const float kAmbient = 0.5;
+
+// Apply lighting (simplified Phong without specular) at sample point.
+void applyLighting(RGBAColor &src, const vec3 &pos) {
+  vec3 normal = calcNormal(pos.x, pos.y, pos.z);
+  vec3 rgb(src.r, src.g, src.b);
+  float kDiffuse = max(glm::dot(normal, lightDirection), 0.0f);
+  vec3 colored = (kDiffuse * diffuseColor + kAmbient * ambientColor) * rgb;
+  zx::clipRGB(colored);
+  for (int i = 0; i < 3; i++) {
+    src[i] = colored[i];
+  }
+}
+
 // Cast one ray corresponding to (u, v) at image plane
 // according to `coloredVolumeData`. Returns the fused RGBAColor.
 void castOneRay(int u, int v, const vec3 &bboxRTB, const mat3 &rotateMat,
@@ -301,8 +328,7 @@ void castOneRay(int u, int v, const vec3 &bboxRTB, const mat3 &rotateMat,
   // transform to object coordinate
   // [xobj, yobj, zobj](t) = [x, y, tz]R+T
   source = source * ctm;
-
-  // the direction of ray is changed too
+  // the direction of ray is shouldReCast too
   direction = glm::normalize(direction * ctm);
 
   vec3 entry;            // entry point of ray into bounding box
@@ -319,6 +345,12 @@ void castOneRay(int u, int v, const vec3 &bboxRTB, const mat3 &rotateMat,
     while (inBBox(samplePos, bboxRTB) && accumulated.a < 1.0) {
       // get sampleColor via interpolation
       sampleColor = colorInterpTriLinear(samplePos, bboxRTB);
+
+      if (ENABLE_LIGHTING) {
+        // light it
+        applyLighting(sampleColor, samplePos);
+      }
+
       // Cout = Cin + (1-ain)aiCi
       fusionColorFrontToBack(accumulated, sampleColor);
       // go forward
@@ -398,7 +430,7 @@ void consoleLogWelcome() {
           "########################\n";
 }
 
-bool changed = true;
+bool shouldReCast = true;
 
 int main() {
   // initialize
@@ -449,10 +481,10 @@ int main() {
         {vBackBuf, vBack, nPoints * 2, "aPosition", 2, GL_FLOAT},
         {vtBackBuf, vtBack, nPoints * 2, "aTexCoord", 2, GL_FLOAT},
     });
-    if (changed) {
+    if (shouldReCast) {
       rayCasting();
+      shouldReCast = false;
     }
-    changed = false;
 
     glDrawArrays(GL_TRIANGLE_FAN, 0, nPoints);
 
@@ -470,22 +502,22 @@ void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __) {
     if (key == GLFW_KEY_LEFT) {
       if (normalizedEyePos.x >= -1) {
         normalizedEyePos.x -= ARROW_KEY_TRACEBALL_DELTA;
-        changed = true;
+        shouldReCast = true;
       }
     } else if (key == GLFW_KEY_RIGHT) {
       if (normalizedEyePos.x <= 1) {
         normalizedEyePos.x += ARROW_KEY_TRACEBALL_DELTA;
-        changed = true;
+        shouldReCast = true;
       }
     } else if (key == GLFW_KEY_UP) {
       if (normalizedEyePos.y >= -1) {
         normalizedEyePos.y -= ARROW_KEY_TRACEBALL_DELTA;
-        changed = true;
+        shouldReCast = true;
       }
     } else if (key == GLFW_KEY_DOWN) {
       if (normalizedEyePos.y <= 1) {
         normalizedEyePos.y += ARROW_KEY_TRACEBALL_DELTA;
-        changed = true;
+        shouldReCast = true;
       }
     }
   }
