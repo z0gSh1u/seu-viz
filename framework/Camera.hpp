@@ -24,6 +24,7 @@ using std::ostream;
 
 using namespace zx;
 
+const vec3 WORLD_ORIGIN = vec3(0.0, 0.0, 0.0);
 const vec3 VEC_UP = vec3(0.0, 1.0, 0.0);
 
 namespace zx {

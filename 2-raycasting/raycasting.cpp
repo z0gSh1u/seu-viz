@@ -4,8 +4,6 @@
 // by z0gSh1u @ https://github.com/z0gSh1u/seu-viz
 // ################################################
 
-// TODO Lighting bug black spots
-
 //                [Some Instructions for the Code]               //
 // [compile]
 //   Compile in `Release` mode, or rendering will be slow.
@@ -40,6 +38,7 @@
 
 #include "../framework/ReNow.hpp"
 #include "../framework/Utils.hpp"
+#include "../framework/Camera.hpp"
 
 using namespace zx;
 
@@ -83,7 +82,7 @@ map<string, function<void(const uint16 *vol, int vCount, RGBAColor *res)>>
     transferFunctionMap = {
         {"TF_CT_Bone", TF_CT_Bone},
         {"TF_CT_MuscleAndBone", TF_CT_MuscleAndBone},
-        {"TF_CT_What", TF_CT_What},
+        {"TF_CT_Skin", TF_CT_Skin},
 };
 
 // [Multi Thread]
@@ -102,12 +101,12 @@ int currentTexId = -1;  // casting result image plane is stored as texture
 float SamplingDelta;           // step of voxel sampling, coarse: 1, finer: 0.5
 
 // [Observation]
-vec3 initEyePos(0, 0, 1024);           // far enough to see the whole volume
 vec3 eyePos;                           // current eye position
 vec3 normalizedEyePos(0, 0, 1);        // for lookAt matrix calculation
-const vec3 initEyeDirection(0, 0, -1); // look toward -z by default
+const vec3 initEyeDirection(0, 0, -1); // look towards -z by default
 mat3 currentRotateMatrix;              // current rotate matrix
 #define ARROW_KEY_TRACEBALL_DELTA 0.2  // increment for arrow key pressing
+#define WS_KEY_FRONTBACK_DELTA 16 // increment for W/S key pressing at Z-axis
 void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __);
 
 // [Lighting]
@@ -129,8 +128,8 @@ mat3 UntranslatedLookAt(vec3 eye, vec3 at, vec3 up) {
   return mat3(glm::lookAt(eye, at, up));
 }
 
-// Load config file from CONFIG_FILE.
-void loadConfigFile() {
+// Load config file from CONFIG_FILE, and calculate some parameters.
+void loadConfigFileAndInitialize() {
   Document d;
   d.Parse(readFileText(CONFIG_FILE).c_str());
 
@@ -141,6 +140,8 @@ void loadConfigFile() {
   VolumeWidth = d["VolumeWidth"].GetInt();
   VolumeHeight = d["VolumeHeight"].GetInt();
   VolumeZCount = d["VolumeZCount"].GetInt();
+  // far enough to hold the whole volume in view
+  eyePos = vec3(0, 0, VolumeZCount + 1);
 
   bboxRTB = vec3(VolumeWidth - 1, VolumeHeight - 1, VolumeZCount - 1);
   PixelPerSlice = VolumeWidth * VolumeHeight;
@@ -183,6 +184,7 @@ int getVoxel(int x, int y, int z) { return volumeData[getVoxelIndex(x, y, z)]; }
 // Get normal at point.
 vec3 calcNormal(int x, int y, int z) {
   float defaultValue = getVoxel(x, y, z);
+  defaultValue = 0;
   float x1 = x > 0 ? getVoxel(x - 1, y, z) : defaultValue,
         x2 = x < VolumeWidth - 1 ? getVoxel(x + 1, y, z) : defaultValue,
         y1 = y > 0 ? getVoxel(x, y - 1, z) : defaultValue,
@@ -191,7 +193,13 @@ vec3 calcNormal(int x, int y, int z) {
         z2 = z < VolumeZCount - 1 ? getVoxel(x, y, z + 1) : defaultValue;
   // normalized normal equal to normalized gradient
   vec3 gradient(x1 - x2, y1 - y2, z1 - z2);
-  return glm::normalize(gradient);
+  vec3 gradientNorm = glm::normalize(gradient);
+  // handle numerical precision error
+  if (isnan(gradientNorm.x) || isnan(gradientNorm.y) || isnan(gradientNorm.z)) {
+    return gradient;
+  }
+  // we prefer a normalized normal
+  return gradientNorm;
 }
 
 // Apply transfer function to fill `coloredVolumeData`.
@@ -282,9 +290,11 @@ bool _intersectTestOnePlane(const float origin, const float direction,
 // tracing. pp.33, 1989.
 // @see https://zhuanlan.zhihu.com/p/138259656
 // origin->direction determines the ray
-// the entry point is returned using &entry with parameter &t
+// the entry point (or first intersect point exactly) is returned using &entry
+// with parameter &t
 bool intersectTest(const vec3 &origin, const vec3 &direction,
                    const vec3 &bboxRTB, vec3 &entry, float &t) {
+  // t0 is the parameter of entry, while t1 is of exit
   double t0Final = -(DBL_MAX - 1), t1Final = DBL_MAX - 1;
 
   if (!_intersectTestOnePlane(origin.x, direction.x, bboxRTB.x, t0Final,
@@ -296,8 +306,12 @@ bool intersectTest(const vec3 &origin, const vec3 &direction,
     return false;
   }
 
-  t = t0Final >= 0 ? t0Final : t1Final;
-  entry = origin + t * direction;
+  // If t0Final > 0, there are two intersect points. So t0Final is for exact
+  // entry. But if t0Final < 0, then there is only exit, which means we are
+  // currently inside the bounding box. So we return source point instead.
+  // Then that we can cast the ray from here.
+  t = t0Final >= 0 ? t0Final : 0;
+  entry = vec3(origin + t * direction);
 
   return true;
 }
@@ -320,7 +334,6 @@ void applyLighting(RGBAColor &src, const vec3 &pos) {
   vec3 normal = calcNormal(pos.x, pos.y, pos.z);
   vec3 rgb(src.r, src.g, src.b);
   float kDiffuse = std::max(glm::dot(normal, lightDirection), 0.0f);
-
   vec3 colored = (kDiffuse * diffuseColor + KAmbient * ambientColor) * rgb;
   zx::clipRGB(colored);
   for (int i = 0; i < 3; i++) {
@@ -348,9 +361,9 @@ void castOneRay(int u, int v, const vec3 &bboxRTB, const mat3 &rotateMat,
   vec3 entry;            // entry point of ray into bounding box
   vec3 samplePos;        // current voxel coordinate
   RGBAColor sampleColor; // current color (at current voxel)
-  float tEntry;          // parameter t of entry point
+  float paramT; // parameter t of entry or exit point (first intersect point)
 
-  if (intersectTest(source, direction, bboxRTB, entry, tEntry)) {
+  if (intersectTest(source, direction, bboxRTB, entry, paramT)) {
     // initialize samplePos
     samplePos = entry;
     // march the ray
@@ -493,8 +506,7 @@ bool shouldReCast = true;
 int main() {
   // initialize
   consoleLogWelcome();
-  loadConfigFile();
-  eyePos = initEyePos;
+  loadConfigFileAndInitialize();
 
   GLFWwindow *window =
       initGLWindow("Project 2 - Ray Casting / Zhuo Xu 212138 SEU", WINDOW_WIDTH,
@@ -541,7 +553,7 @@ int main() {
       });
       // recalculate rotate matrix
       currentRotateMatrix =
-          UntranslatedLookAt(normalizedEyePos, vec3(0, 0, 0), vec3(0, 1, 0));
+          UntranslatedLookAt(normalizedEyePos, WORLD_ORIGIN, VEC_UP);
       // recast rays
       rayCasting();
       shouldReCast = false;
@@ -562,23 +574,39 @@ int main() {
 void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __) {
   if (action == GLFW_PRESS) {
     if (key == GLFW_KEY_LEFT) {
+      // go left
       if (normalizedEyePos.x >= -1) {
         normalizedEyePos.x -= ARROW_KEY_TRACEBALL_DELTA;
         shouldReCast = true;
       }
     } else if (key == GLFW_KEY_RIGHT) {
+      // go right
       if (normalizedEyePos.x <= 1) {
         normalizedEyePos.x += ARROW_KEY_TRACEBALL_DELTA;
         shouldReCast = true;
       }
     } else if (key == GLFW_KEY_UP) {
+      // go top
       if (normalizedEyePos.y >= -1) {
         normalizedEyePos.y -= ARROW_KEY_TRACEBALL_DELTA;
         shouldReCast = true;
       }
     } else if (key == GLFW_KEY_DOWN) {
+      // go bottom
       if (normalizedEyePos.y <= 1) {
         normalizedEyePos.y += ARROW_KEY_TRACEBALL_DELTA;
+        shouldReCast = true;
+      }
+    } else if (key == GLFW_KEY_W) {
+      // go forward
+      if (eyePos.z > WS_KEY_FRONTBACK_DELTA) {
+        eyePos.z -= WS_KEY_FRONTBACK_DELTA;
+        shouldReCast = true;
+      }
+    } else if (key == GLFW_KEY_S) {
+      // go backward
+      if (eyePos.z < VolumeZCount + 1) {
+        eyePos.z += WS_KEY_FRONTBACK_DELTA;
         shouldReCast = true;
       }
     }

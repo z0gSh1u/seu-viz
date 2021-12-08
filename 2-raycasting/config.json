@@ -10,10 +10,10 @@
   "ImagePlaneWidth": 512,
   "ImagePlaneHeight": 512,
 
-  "TransferFunction": "TF_CT_MuscleAndBone",
+  "TransferFunction": "TF_CT_Bone",
   "MedianFilterKSize": 0,
   "SamplingDelta": 0.5,
-  "EnableLighting": false,
+  "EnableLighting": true,
   "KAmbient": 0.6,
 
   "MultiThread": 4

@@ -11,8 +11,6 @@
 #include "../framework/ReNow.hpp"
 #include "../framework/Utils.hpp"
 
-using glm::vec4;
-
 // Note that numbers in volumeData is Uint16, which means
 // before "Rescaling" to CT HU value.
 // So the actual HU value is `v-1024` if rescaling function
@@ -28,13 +26,13 @@ void TF_CT_Bone(const uint16 *volumeData, int voxelCount,
   uint16 v;
   for (int i = 0; i < voxelCount; i++) {
     v = volumeData[i];
-    if (v < 1150) {
-      color = Transparent; // [~, 1150], we dont care
-    } else if (v < 2200) { // [1150, 2200], bone (mostly)
+    if (v < 1155) {
+      color = Transparent; // [~, 1155], we dont care
+    } else if (v < 2200) { // [1155, 2200], bone (mostly)
       color =
-          RGBAColor(colorInterpLinear(v, 1150, 2200, RGBColor(180, 180, 180),
+          RGBAColor(colorInterpLinear(v, 1155, 2200, RGBColor(180, 180, 180),
                                       vec3(60, 60, 60)),
-                    0.06); // gray
+                    0.1); // gray
     } else {
       color = Transparent; // [2200, ~] // invalid value
     }
@@ -53,9 +51,9 @@ void TF_CT_MuscleAndBone(const uint16 *volumeData, int voxelCount,
       color = Transparent;
     } else if (v < 1155) { // [1040, 1155], muscle
       color =
-          RGBAColor(colorInterpLinear(v, 1040, 1155, RGBColor(255, 208, 175),
-                                      vec3(0, 30, 30)),
-                    0.05); // like skin color
+          RGBAColor(colorInterpLinear(v, 1040, 1155, RGBColor(255, 188, 155),
+                                      vec3(0, 50, 50)),
+                    0.05); // "muscle" (skin) color
     } else if (v < 2200) { // [1155, 2200], bone (mostly)
       color =
           RGBAColor(colorInterpLinear(v, 1155, 2200, RGBColor(180, 180, 180),
@@ -68,27 +66,19 @@ void TF_CT_MuscleAndBone(const uint16 *volumeData, int voxelCount,
   }
 }
 
-// Shows mainly muscle and some bone.
-void TF_CT_What(const uint16 *volumeData, int voxelCount,
-                         RGBAColor *coloredVolumeData) {
+// Shows skin.
+void TF_CT_Skin(const uint16 *volumeData, int voxelCount,
+                RGBAColor *coloredVolumeData) {
   RGBAColor color;
   uint16 v;
   for (int i = 0; i < voxelCount; i++) {
     v = volumeData[i];
-    if (v < 880) { // [~, 1040], we dont care
+    if (v < 880) { // [~, 880], we dont care
       color = Transparent;
-    } else if (v < 920) { // [1040, 1155], muscle
-      color =
-          RGBAColor(colorInterpLinear(v, 880, 920, RGBColor(255, 208, 175),
-                                      vec3(0, 30, 30)),
-                    0.5); // like skin color
-      // color =RGBAColor(RGBColor(255, 208, 175), 1.0);
-    } else if (v < 2200) { // [1155, 2200], bone (mostly)
-      // color =
-      //     RGBAColor(colorInterpLinear(v, 1155, 2200, RGBColor(180, 180, 180),
-      //                                 vec3(60, 60, 60)),
-      //               0.07); // gray
-      color = Transparent;
+    } else if (v < 925) { // [880, 925], muscle
+      color = RGBAColor(colorInterpLinear(v, 880, 925, RGBColor(255, 198, 165),
+                                          vec3(0, 15, 15)),
+                        0.8); // skin color, high alpha to block anatomy inside
     } else {
       color = Transparent;
     }
