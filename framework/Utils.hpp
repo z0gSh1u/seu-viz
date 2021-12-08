@@ -17,6 +17,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <stdexcept>
 #include "ReNow.hpp"
 
 using glm::vec2;
@@ -29,6 +30,7 @@ using std::regex;
 using std::string;
 using std::stringstream;
 using std::vector;
+using std::runtime_error;
 
 // type alias
 typedef GLuint GL_SHADER_ID;
@@ -49,13 +51,15 @@ namespace zx {
 
 const RGBColor RGBWhite = RGBColor(255, 255, 255);
 const RGBColor RGBBlack = RGBColor(0, 0, 0);
+const RGBColor RGBGray = RGBColor(127, 127, 127);
+const RGBAColor Transparent = RGBAColor(0, 0, 0, 0);
 const double PI = 3.1415926535;
 
-// Ensure `ensure`, else terminate and output hint.
+// Ensure `ensure`, else throw and output hint.
 void ASSERT(bool ensure, const string &hint) {
   if (!ensure) {
     std::cerr << hint << std::endl;
-    assert(0);
+    throw runtime_error(hint);
   }
 }
 
@@ -117,13 +121,25 @@ vector<float> mapParseFloat(const vector<string> &strs, size_t l = 0) {
   return res;
 }
 
+// Linear interp RGB color.
+RGBColor colorInterpLinear(int v, int rangeL, int rangeR,
+                           const RGBColor &startColor, const vec3 &colorRange) {
+  float offset = v - rangeL;
+  float ratio = offset / (rangeR - rangeL);
+  RGBColor color = startColor + ratio * colorRange;
+  color.r = int(color.r);
+  color.g = int(color.g);
+  color.b = int(color.b);
+  return color;
+}
+
 // Convert DEG to RAD.
 float radians(float deg) { return deg / 180 * PI; }
 
-// Convert RGBColor to string for debug.
-string rgbColorToString(const RGBColor &color) {
+// Convert Vec3 to string.
+string vec3ToString(const vec3 &vec) {
   stringstream ss;
-  ss << "[" << color.r << ", " << color.g << ", " << color.b << "]";
+  ss << "[" << vec.x << ", " << vec.y << ", " << vec.z << "]";
   return ss.str();
 }
 
@@ -151,14 +167,6 @@ template <typename T> void swap(T &a, T &b) {
   T tmp = a;
   a = b;
   b = tmp;
-}
-
-// format print vec3
-string watchVec3(const vec3 &vec, string name = "") {
-  stringstream ss;
-  ss << name << ": (" << vec.x << ", " << vec.y << ", " << vec.z << ")"
-     << "\n";
-  return ss.str();
 }
 
 } // namespace zx

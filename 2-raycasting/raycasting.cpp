@@ -4,11 +4,9 @@
 // by z0gSh1u @ https://github.com/z0gSh1u/seu-viz
 // ################################################
 
-// TODO
-// 1 - Traceball  [OK!]
-// 2 - Lighting   [OK!]
-// 3 - TF Auto or design  [TODO]
+// TODO Lighting bug black spots
 
+//                [Some Instructions for the Code]               //
 // [compile]
 //   Compile in `Release` mode, or rendering will be slow.
 // [geometry]
@@ -18,7 +16,7 @@
 //   So we only need the right-top-back point `bboxRTB` to determine the
 //   bounding box.
 // [data]
-//   Required volume data is .raw file format with 16-bit unsigned LittleEndian
+//   Required volume data is .raw file with 16-bit Unsigned LittleEndian
 //   per voxel.
 #define BytesPerVoxel 2
 // [transfer function]
@@ -31,15 +29,18 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <rapidjson/document.h>
 #include <ctime>
+#include <climits>
 #include <thread>
 #include <map>
 #include <functional>
 #include <algorithm>
+#include <mutex>
+#include <algorithm>
+#include <cstdio>
 
 #include "../framework/ReNow.hpp"
 #include "../framework/Utils.hpp"
 
-using namespace std;
 using namespace zx;
 
 using glm::mat3;
@@ -47,67 +48,88 @@ using glm::mat4;
 using glm::vec3;
 using glm::vec4;
 using rapidjson::Document;
+using std::cerr;
+using std::cout;
+using std::endl;
+using std::function;
+using std::map;
+using std::mutex;
+using std::sort;
+using std::thread;
+using std::vector;
 
-// Here are some parameters that will be read from config
+// ### Here are parameters that should be set, read, or calculated. ###
 const string CONFIG_FILE = "./config.json";
-// window
-int WINDOW_WIDTH;
-int WINDOW_HEIGHT;
-// volume data metainfo
-int VolumeWidth;  // x
-int VolumeHeight; // y
-int VolumeZCount; // z (thickness)
-vec3 bboxRTB;     // bounding box Right-Top-Back
-int PixelPerSlice;
-int VoxelCount;
-string VolumePath;
-// volume data
-uint16 *volumeData;
-// after coloring using transfer function (TF) (classification step)
-vec4 *coloredVolumeData; // RGBA
-// image plane related
-int ImagePlaneWidth;
-int ImagePlaneHeight;
-int ImagePlaneSize;
-RGBAColor *imagePlane;
-// transfer function
+// [Display Window]
+int WINDOW_WIDTH, WINDOW_HEIGHT;
+
+// [Volume Data Metainfo]
+string VolumePath;                           // volume raw file path
+int VolumeWidth, VolumeHeight, VolumeZCount; // x, y, z (thickness)
+vec3 bboxRTB;                                // bounding box Right-Top-Back
+int PixelPerSlice, VoxelCount;
+uint16 *volumeData;           // volume data itself
+RGBAColor *coloredVolumeData; // after coloring using transfer function (TF)
+
+// [Image Plane]
+int ImagePlaneWidth, ImagePlaneHeight, ImagePlaneSize;
+RGBAColor *imagePlane; // image plane itself
+int MedianFilterKSize;
+
+// [Transfer Function]
 string TransferFunctionName;
-// register your transfer function here
-map<string, function<void(const uint16 *a, int b, vec4 *c)>>
-    transferFunctionMap = {{"SheppLogan", TF_SheppLogan},
-                           {"CT_Lung", TF_CT_Lung},
-                           {"CT_Bone", TF_CT_Bone},
-                           {"CT_BoneOnly", TF_CT_BoneOnly}};
-// number of threads
-int multiThread;
-// for progress bar printing
+// Register your transfer function here.
+map<string, function<void(const uint16 *vol, int vCount, RGBAColor *res)>>
+    transferFunctionMap = {
+        {"TF_CT_Bone", TF_CT_Bone},
+        {"TF_CT_MuscleAndBone", TF_CT_MuscleAndBone},
+        {"TF_CT_What", TF_CT_What},
+};
+
+// [Multi Thread]
+int multiThread;      // num_workers
+float sharePerThread; // proportion of workload per thread
+mutex multiThreadMutex;
+
+// [Progress Bar]
 float progress = 0.0;
 float progressPerThreadPerRow;
-int coloringCount = 0;
-// observing
-int currentTexId = -1;       // image plane is stored as texture
-vec3 initEyePos(0, 0, 2048); // somewhere far Enough
-vec3 normalizedEyePos(0, 0, 1);
-const vec3 initEyeDirection(0, 0, -1);
-mat3 currentRotateMatrix; // current rotate matrix
-#define ARROW_KEY_TRACEBALL_DELTA 0.2
-void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __);
-// lighting
-const vec3 lightDirection(0, 0, -1);
-const RGBColor diffuseColor(1, 1, 1);
-const RGBColor ambientColor(1, 1, 1);
-const float kAmbient = 0.5;
-#define ENABLE_LIGHTING true // Whether to apply lighting to volume data
-// ReNow helper
-ReNowHelper helper;
 
-// Truncate the translation vector (last column) in lookAt matrix,
-// since we handle translation mannually x'=xR+T
+// [Ray Casting]
+int intersectCount = 0; // # ray intersects with bounding box
+int currentTexId = -1;  // casting result image plane is stored as texture
+#define INTERSECT_EPSILON 1e-6 // error control for intersect test
+float SamplingDelta;           // step of voxel sampling, coarse: 1, finer: 0.5
+
+// [Observation]
+vec3 initEyePos(0, 0, 1024);           // far enough to see the whole volume
+vec3 eyePos;                           // current eye position
+vec3 normalizedEyePos(0, 0, 1);        // for lookAt matrix calculation
+const vec3 initEyeDirection(0, 0, -1); // look toward -z by default
+mat3 currentRotateMatrix;              // current rotate matrix
+#define ARROW_KEY_TRACEBALL_DELTA 0.2  // increment for arrow key pressing
+void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __);
+
+// [Lighting]
+bool EnableLighting;                 // whether to apply lighting to volume data
+const vec3 lightDirection(0, 0, -1); // same as default look-toward
+const RGBColor
+    ambientColor(normalizeRGBColor(RGBWhite)); // white light by default
+const RGBColor
+    diffuseColor(normalizeRGBColor(RGBWhite)); // white light by default
+float KAmbient;                                // weight for ambient component
+
+// [ReNow Helper]
+ReNowHelper helper;
+// ### Here are parameters that should be set, read, or calculated. ###
+
+// Truncate the translation vector (i.e. the last column) in lookAt matrix,
+// since we handle the translation manually with x'=xR+t
 mat3 UntranslatedLookAt(vec3 eye, vec3 at, vec3 up) {
   return mat3(glm::lookAt(eye, at, up));
 }
 
-// load config file from config.json
+// Load config file from CONFIG_FILE.
 void loadConfigFile() {
   Document d;
   d.Parse(readFileText(CONFIG_FILE).c_str());
@@ -132,8 +154,13 @@ void loadConfigFile() {
   imagePlane = new RGBAColor[ImagePlaneSize];
 
   TransferFunctionName = d["TransferFunction"].GetString();
+  MedianFilterKSize = d["MedianFilterKSize"].GetInt();
+  SamplingDelta = d["SamplingDelta"].GetFloat();
+  EnableLighting = d["EnableLighting"].GetBool();
+  KAmbient = d["KAmbient"].GetFloat();
 
   multiThread = d["MultiThread"].GetInt();
+  sharePerThread = 1.0 / multiThread;
   progressPerThreadPerRow =
       (float)ImagePlaneWidth * multiThread / ImagePlaneSize;
 }
@@ -169,12 +196,9 @@ vec3 calcNormal(int x, int y, int z) {
 
 // Apply transfer function to fill `coloredVolumeData`.
 void applyTransferFunction(const string &name) {
-  if (transferFunctionMap.count(name) != 0) {
-    transferFunctionMap[name](volumeData, VoxelCount, coloredVolumeData);
-  } else {
-    cerr << "[WARN] Invalid transfer function: " << TransferFunctionName
-         << endl;
-  }
+  ASSERT(transferFunctionMap.count(name) != 0,
+         "[ERROR] Invalid transfer function: " + TransferFunctionName);
+  transferFunctionMap[name](volumeData, VoxelCount, coloredVolumeData);
 }
 
 // Get interpolated color of pos using TriLinear method.
@@ -186,35 +210,35 @@ RGBAColor colorInterpTriLinear(const vec3 &pos, const vec3 &bboxRTB) {
   x0 = int(pos.x);
   xd = pos.x - x0;
   x1 = x0 + 1;
-  x1 = x1 >= bboxRTB.x ? x1 - 1 : x1;
+  x1 = x1 > bboxRTB.x ? x1 - 1 : x1;
 
   y0 = int(pos.y);
   yd = pos.y - y0;
   y1 = y0 + 1;
-  y1 = y1 >= bboxRTB.y ? y1 - 1 : y1;
+  y1 = y1 > bboxRTB.y ? y1 - 1 : y1;
 
   z0 = int(pos.z);
   zd = pos.z - z0;
   z1 = z0 + 1;
-  z1 = z1 >= bboxRTB.z ? z1 - 1 : z1;
+  z1 = z1 > bboxRTB.z ? z1 - 1 : z1;
 
   res =
       (1 - xd) * (1 - yd) * (1 - zd) *
           coloredVolumeData[getVoxelIndex(x0, y0, z0)] +
-      xd * (1 - yd) * (1 - zd) * coloredVolumeData[getVoxelIndex(x1, y0, z1)] +
+      xd * (1 - yd) * (1 - zd) * coloredVolumeData[getVoxelIndex(x1, y0, z0)] +
       (1 - xd) * yd * (1 - zd) * coloredVolumeData[getVoxelIndex(x0, y1, z0)] +
-      (1 - xd) * (1 - yd) * zd * coloredVolumeData[getVoxelIndex(x1, y0, z0)] +
-      xd * yd * (1 - zd) * coloredVolumeData[getVoxelIndex(x0, y1, z1)] +
+      (1 - xd) * (1 - yd) * zd * coloredVolumeData[getVoxelIndex(x0, y0, z1)] +
+      xd * yd * (1 - zd) * coloredVolumeData[getVoxelIndex(x1, y1, z0)] +
       xd * (1 - yd) * zd * coloredVolumeData[getVoxelIndex(x1, y0, z1)] +
       (1 - xd) * yd * zd * coloredVolumeData[getVoxelIndex(x0, y1, z1)] +
-      xd * yd * zd * coloredVolumeData[getVoxelIndex(x0, y0, z0)];
+      xd * yd * zd * coloredVolumeData[getVoxelIndex(x1, y1, z1)];
 
-  zx::clipRGBA(res, 0, 1);
+  zx::clipRGBA(res);
   return res;
 }
 
 // Fusion `sample` color into `accumalted` using front-to-back iteration method.
-void fusionColorFrontToBack(vec4 &accmulated, const vec4 &sample) {
+void fusionColorFrontToBack(RGBAColor &accmulated, const RGBAColor &sample) {
   // RGB channels
   for (int i = 0; i < 3; i++) {
     accmulated[i] = accmulated[i] + (1 - accmulated.a) * sample.a * sample[i];
@@ -229,22 +253,21 @@ bool inBBox(const vec3 &point, const vec3 &bboxRTB) {
          point.y <= bboxRTB.y && point.z >= 0 && point.z <= bboxRTB.z;
 }
 
-// helper for function `bool intersectTest`
+// Helper function for `bool intersectTest`.
 bool _intersectTestOnePlane(const float origin, const float direction,
-                            const float bboxRTB, float &t0Final,
-                            float &t1Final) {
-  const float EPSILON = 1e-4;
-  float bMin = 0, bMax = bboxRTB;
-  float t0, t1;
+                            const float bboxRTB, double &t0Final,
+                            double &t1Final) {
+  double bMin = 0, bMax = bboxRTB;
+  double t0, t1;
 
-  if (fabs(direction) > EPSILON) { // direction != 0
+  if (fabs(direction) > INTERSECT_EPSILON) { // direction != 0
     t0 = (bMin - origin) / direction;
     t1 = (bMax - origin) / direction;
     if (t0 > t1) {
-      zx::swap<float>(t0, t1);
+      zx::swap<double>(t0, t1);
     }
-    t0Final = max(t0Final, t0);
-    t1Final = min(t1Final, t1);
+    t0Final = std::max(t0Final, t0);
+    t1Final = std::min(t1Final, t1);
 
     if (t0Final > t1Final || t1 < 0) {
       return false; // must not intersect
@@ -262,7 +285,7 @@ bool _intersectTestOnePlane(const float origin, const float direction,
 // the entry point is returned using &entry with parameter &t
 bool intersectTest(const vec3 &origin, const vec3 &direction,
                    const vec3 &bboxRTB, vec3 &entry, float &t) {
-  float t0Final = -9999999, t1Final = 9999999;
+  double t0Final = -(DBL_MAX - 1), t1Final = DBL_MAX - 1;
 
   if (!_intersectTestOnePlane(origin.x, direction.x, bboxRTB.x, t0Final,
                               t1Final) ||
@@ -279,7 +302,7 @@ bool intersectTest(const vec3 &origin, const vec3 &direction,
   return true;
 }
 
-// Implement of simple progressbar
+// Implement of a simple progressbar.
 // @see https://stackoverflow.com/questions/14539867/
 void updateProgressBar(float progress, int barWidth = 50) {
   cout << "[";
@@ -291,13 +314,14 @@ void updateProgressBar(float progress, int barWidth = 50) {
   cout.flush();
 }
 
-// Apply lighting (simplified Phong without specular) at sample point.
+// Apply lighting at sample point.
 void applyLighting(RGBAColor &src, const vec3 &pos) {
+  // using simplified Phong (without specular)
   vec3 normal = calcNormal(pos.x, pos.y, pos.z);
   vec3 rgb(src.r, src.g, src.b);
-  float kDiffuse = max(glm::dot(normal, lightDirection), 0.0f);
+  float kDiffuse = std::max(glm::dot(normal, lightDirection), 0.0f);
 
-  vec3 colored = (kDiffuse * diffuseColor + kAmbient * ambientColor) * rgb;
+  vec3 colored = (kDiffuse * diffuseColor + KAmbient * ambientColor) * rgb;
   zx::clipRGB(colored);
   for (int i = 0; i < 3; i++) {
     src[i] = colored[i];
@@ -305,10 +329,10 @@ void applyLighting(RGBAColor &src, const vec3 &pos) {
 }
 
 // Cast one ray corresponding to (u, v) at image plane
-// according to `coloredVolumeData`. Returns the fused RGBAColor.
+// according to `coloredVolumeData`. Returns the fused (blended) RGBAColor.
 void castOneRay(int u, int v, const vec3 &bboxRTB, const mat3 &rotateMat,
                 const vec3 &translateVec,
-                const vec4 &defaultColor = vec4(RGBBlack, 1.0)) {
+                const RGBAColor &defaultColor = RGBAColor(RGBBlack, 1.0)) {
   RGBAColor accumulated(0, 0, 0, 0); // acuumulated color during line integral
 
   // use parallel projection
@@ -324,28 +348,31 @@ void castOneRay(int u, int v, const vec3 &bboxRTB, const mat3 &rotateMat,
   vec3 entry;            // entry point of ray into bounding box
   vec3 samplePos;        // current voxel coordinate
   RGBAColor sampleColor; // current color (at current voxel)
-  const float delta = 1; // sampling stepsize
   float tEntry;          // parameter t of entry point
 
-  bool intersect = intersectTest(source, direction, bboxRTB, entry, tEntry);
-  if (intersect) {
+  if (intersectTest(source, direction, bboxRTB, entry, tEntry)) {
     // initialize samplePos
     samplePos = entry;
-    // ray marching
+    // march the ray
     while (inBBox(samplePos, bboxRTB) && accumulated.a < 1.0) {
       // get sampleColor via interpolation
       sampleColor = colorInterpTriLinear(samplePos, bboxRTB);
       // light it
-      if (ENABLE_LIGHTING) {
+      if (EnableLighting) {
         applyLighting(sampleColor, samplePos);
       }
       // Cout = Cin + (1-ain)aiCi
       fusionColorFrontToBack(accumulated, sampleColor);
       // go forward
-      samplePos += delta * direction;
+      samplePos += SamplingDelta * direction;
     }
+    // fill the image plane
+    zx::clipRGBA(accumulated);
     imagePlane[getPixelIndex(v, u)] = RGBAColor(accumulated);
-    coloringCount++;
+    // record intersect count
+    multiThreadMutex.lock();
+    intersectCount++;
+    multiThreadMutex.unlock();
   } else {
     imagePlane[getPixelIndex(v, u)] = RGBAColor(defaultColor);
   }
@@ -355,7 +382,7 @@ void castOneRay(int u, int v, const vec3 &bboxRTB, const mat3 &rotateMat,
 void castSomeRays(int rowLow, int rowHigh) {
   for (int r = rowLow; r < rowHigh; r++) {
     for (int c = 0; c < ImagePlaneWidth; c++) {
-      castOneRay(c, r, bboxRTB, currentRotateMatrix, initEyePos);
+      castOneRay(c, r, bboxRTB, currentRotateMatrix, eyePos);
     }
     if (rowLow == 0) { // the first thread
       updateProgressBar(progress = progress + progressPerThreadPerRow);
@@ -366,7 +393,6 @@ void castSomeRays(int rowLow, int rowHigh) {
 // Multi-thread Ray Casting
 void castAllRays() {
   vector<thread> threadPool;
-  const float sharePerThread = (float)1 / multiThread;
   for (int i = 0; i < multiThread; i++) {
     int low = int(sharePerThread * i * ImagePlaneHeight);
     int high = i == multiThread - 1
@@ -377,10 +403,37 @@ void castAllRays() {
   for_each(threadPool.begin(), threadPool.end(), [=](thread &t) { t.join(); });
 }
 
+// Single-thread Ray Casting (for debug only)
+void castAllRaysSingleThread() { castSomeRays(0, ImagePlaneHeight); }
+
+// Median filtering the image plane.
+void medianFilter(int ksize) {
+  RGBAColor *tempRes = new RGBAColor[ImagePlaneSize]; // alloc on demand
+  vector<vec4> vs;
+  int pad = (ksize - 1) / 2;
+  int middle = (ksize * ksize - 1) / 2;
+  for (int i = pad; i < ImagePlaneHeight - pad; i++) {
+    for (int j = pad; j < ImagePlaneWidth - pad; j++) {
+      vs.clear();
+      for (int k = -pad; k <= pad; k++) {
+        for (int l = -pad; l <= pad; l++) {
+          vs.push_back(RGBAColor(imagePlane[getPixelIndex(i + k, j + l)]));
+        }
+      }
+      sort(vs.begin(), vs.end(), [=](const RGBAColor &a, const RGBAColor &b) {
+        return (a.r + a.g + a.b) < (b.r + b.g + b.b);
+      });
+      tempRes[getPixelIndex(i, j)] = vs.at(middle);
+    }
+  }
+  std::copy(tempRes, tempRes + ImagePlaneSize, imagePlane);
+  delete tempRes;
+}
+
 // The very main
 void rayCasting() {
   // prepare for a new rendering
-  coloringCount = 0;
+  intersectCount = 0;
   progress = 0.0;
 
   cout << ">>> Restart ray casting using " << multiThread << " threads..."
@@ -389,23 +442,40 @@ void rayCasting() {
   castAllRays();
   time_t toc = time(NULL);
 
-  // store image plane
+  // release previous texture
   if (currentTexId != -1) {
     GL_OBJECT_ID x = currentTexId;
     glDeleteTextures(1, &x);
   }
-  GL_OBJECT_ID texId = helper.createTexture2D(
-      imagePlane, GL_RGBA, ImagePlaneWidth, ImagePlaneHeight, GL_FLOAT);
-  currentTexId = texId;
+  // check if we need to perform median filtering
+  if (MedianFilterKSize > 0) {
+    ASSERT(MedianFilterKSize % 2 == 1, "MedianFilterKSize should be odd.");
+    cout << endl << "Performing Median Filtering..." << endl;
+    medianFilter(MedianFilterKSize);
+  }
+  // store image plane in a new texture
+  currentTexId = helper.createTexture2D(imagePlane, GL_RGBA, ImagePlaneWidth,
+                                        ImagePlaneHeight, GL_FLOAT);
+
+  // If we need to save image plane as file: (for debug only)
+  // FILE *fp;
+  // fopen_s(&fp, "./ImagePlane.raw", "wb");
+  // for (int i = 0; i < ImagePlaneSize; i++) {
+  //   fwrite(&(imagePlane[i].r), sizeof(float), 1, fp);
+  //   fwrite(&(imagePlane[i].g), sizeof(float), 1, fp);
+  //   fwrite(&(imagePlane[i].b), sizeof(float), 1, fp);
+  //   // discard alpha channel
+  // }
+  // fclose(fp);
 
   cout << endl
-       << "# Ray intersect: " << coloringCount << endl
+       << "# Ray intersect: " << intersectCount << endl
        << "# Ray cast: " << ImagePlaneSize << endl
        << "Time elapsed: " << toc - tic << " secs." << endl
        << endl
        << ">>> Start rendering..." << endl
        << endl;
-  helper.prepareUniforms(vector<UPrepInfo>{{"uTexture", (int)texId, "1i"}});
+  helper.prepareUniforms(vector<UPrepInfo>{{"uTexture", currentTexId, "1i"}});
 }
 
 void consoleLogWelcome() {
@@ -424,9 +494,11 @@ int main() {
   // initialize
   consoleLogWelcome();
   loadConfigFile();
+  eyePos = initEyePos;
 
   GLFWwindow *window =
-      initGLWindow("2-raycasting", WINDOW_WIDTH, WINDOW_HEIGHT);
+      initGLWindow("Project 2 - Ray Casting / Zhuo Xu 212138 SEU", WINDOW_WIDTH,
+                   WINDOW_HEIGHT);
   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
   glClearColor(0, 0, 0, 1);
   glfwSetKeyCallback(window, keyboardCallback);
@@ -445,7 +517,6 @@ int main() {
   readFileBinary(VolumePath, BytesPerVoxel, VoxelCount, volumeData);
 
   // apply transfer function
-  time_t tic = time(NULL);
   cout << ">>> Start applying transfer function..." << endl;
   cout << "[Transfer Function Name]: " << TransferFunctionName << endl;
   applyTransferFunction(TransferFunctionName);
@@ -468,10 +539,10 @@ int main() {
           {vBackBuf, vBack, nPoints * 2, "aPosition", 2, GL_FLOAT},
           {vtBackBuf, vtBack, nPoints * 2, "aTexCoord", 2, GL_FLOAT},
       });
-      // recalculate the rotate matrix
+      // recalculate rotate matrix
       currentRotateMatrix =
           UntranslatedLookAt(normalizedEyePos, vec3(0, 0, 0), vec3(0, 1, 0));
-      // recast the rays
+      // recast rays
       rayCasting();
       shouldReCast = false;
     }
@@ -487,7 +558,7 @@ int main() {
   return 0;
 }
 
-// support observation
+// Support observation
 void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __) {
   if (action == GLFW_PRESS) {
     if (key == GLFW_KEY_LEFT) {

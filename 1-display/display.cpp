@@ -74,7 +74,7 @@ int main() {
   consoleLogWelcome();
 
   // initialize
-  GLFWwindow *window = initGLWindow("1-display", WINDOW_WIDTH, WINDOW_HEIGHT);
+  GLFWwindow *window = initGLWindow("Project 1 - Basic Display / Zhuo Xu 212138 SEU", WINDOW_WIDTH, WINDOW_HEIGHT);
   glEnable(GL_DEPTH_TEST);
   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
 
@@ -98,7 +98,7 @@ int main() {
   GL_OBJECT_ID cubeVBuf = helper.createVBO(), cubeNBuf = helper.createVBO();
 
   cout << ">>> Start loading model .obj file, this might take a while..."
-            << endl;
+       << endl;
   // load the sphere and perpare to draw it
   helper.switchVAO(sphereVAO);
   OBJProcessor sphereOBJProc(readFileText("./model/UnitSphere.obj"));
@@ -208,8 +208,7 @@ void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __) {
       phong.setSpecularColor(specularColorPresets[specularColorIndex]);
       phong.recalcProducts();
       cout << "Changed specularColor to "
-                << rgbColorToString(specularColorPresets[specularColorIndex])
-                << "\n";
+           << vec3ToString(specularColorPresets[specularColorIndex]) << "\n";
     }
     if (key == GLFW_KEY_K) {
       specularMaterialIndex++;
@@ -217,9 +216,8 @@ void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __) {
       phong.setSpecularMaterial(specularMaterialPresets[specularMaterialIndex]);
       phong.recalcProducts();
       cout << "Changed specularMaterial to "
-                << rgbColorToString(
-                       specularMaterialPresets[specularMaterialIndex])
-                << "\n";
+           << vec3ToString(specularMaterialPresets[specularMaterialIndex])
+           << "\n";
     }
     // shiness changes
     if (key == GLFW_KEY_I || key == GLFW_KEY_J) {
@@ -242,18 +240,18 @@ void mouseMoveCallback(GLFWwindow *window, double offsetX, double offsetY) {
 
 void consoleLogWelcome() {
   cout << "################################\n"
-               "# Viz Project 1 - Basic OpenGL #\n"
-               "#  by 212138 - Zhuo Xu         #\n"
-               "# @ github.com/z0gSh1u/seu-viz #\n"
-               "################################\n"
-               "### Operation Guide ###\n"
-               "[View transforms]\n"
-               "W - Move forward; A - Move leftward\n"
-               "S - Move backward; D - Move rightward\n"
-               "Space - Move upward; Shift - Move upward\n"
-               "[Specular lighting]\n"
-               "O - Switch light color between presets\n"
-               "K - Switch material color between presets\n"
-               "I - Higher Shiness; J - Lower shiness\n"
-               "########################\n";
+          "# Viz Project 1 - Basic OpenGL #\n"
+          "#  by 212138 - Zhuo Xu         #\n"
+          "# @ github.com/z0gSh1u/seu-viz #\n"
+          "################################\n"
+          "### Operation Guide ###\n"
+          "[View transforms]\n"
+          "W - Move forward; A - Move leftward\n"
+          "S - Move backward; D - Move rightward\n"
+          "Space - Move upward; Shift - Move upward\n"
+          "[Specular lighting]\n"
+          "O - Switch light color between presets\n"
+          "K - Switch material color between presets\n"
+          "I - Higher Shiness; J - Lower shiness\n"
+          "########################\n";
 }

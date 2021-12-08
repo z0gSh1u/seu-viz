@@ -393,3 +393,4 @@ MigrationBackup/
 # ! addons !
 **/model/*
 *.raw
+/temp/
