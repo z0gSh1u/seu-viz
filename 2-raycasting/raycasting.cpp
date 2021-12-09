@@ -53,6 +53,7 @@ using std::endl;
 using std::function;
 using std::map;
 using std::mutex;
+using std::pair;
 using std::sort;
 using std::thread;
 using std::vector;
@@ -86,9 +87,11 @@ map<string, function<void(const uint16 *vol, int vCount, RGBAColor *res)>>
 };
 
 // [Multi Thread]
-int multiThread;      // num_workers
-float sharePerThread; // proportion of workload per thread
-mutex multiThreadMutex;
+int multiThread;        // num_workers
+float sharePerThread;   // proportion of workload per thread
+mutex multiThreadMutex; // mutex lock
+vector<thread> threadPool;
+vector<pair<int, int>> threadParamRanges; // [low, high] for row params
 
 // [Progress Bar]
 float progress = 0.0;
@@ -99,6 +102,7 @@ int intersectCount = 0; // # ray intersects with bounding box
 int currentTexId = -1;  // casting result image plane is stored as texture
 #define INTERSECT_EPSILON 1e-6 // error control for intersect test
 float SamplingDelta;           // step of voxel sampling, coarse: 1, finer: 0.5
+bool shouldReCast = true;
 
 // [Observation]
 vec3 eyePos;                           // current eye position
@@ -147,7 +151,7 @@ void loadConfigFileAndInitialize() {
   PixelPerSlice = VolumeWidth * VolumeHeight;
   VoxelCount = PixelPerSlice * VolumeZCount;
   volumeData = new uint16[VoxelCount];
-  coloredVolumeData = new vec4[VoxelCount];
+  coloredVolumeData = new RGBAColor[VoxelCount];
 
   ImagePlaneWidth = d["ImagePlaneWidth"].GetInt();
   ImagePlaneHeight = d["ImagePlaneHeight"].GetInt();
@@ -164,6 +168,13 @@ void loadConfigFileAndInitialize() {
   sharePerThread = 1.0 / multiThread;
   progressPerThreadPerRow =
       (float)ImagePlaneWidth * multiThread / ImagePlaneSize;
+  for (int i = 0; i < multiThread; i++) {
+    int low = int(sharePerThread * i * ImagePlaneHeight);
+    int high = i == multiThread - 1
+                   ? ImagePlaneHeight
+                   : int(sharePerThread * (i + 1) * ImagePlaneHeight);
+    threadParamRanges.push_back({low, high});
+  }
 }
 
 // Get pixel index at imaging plane.
@@ -263,9 +274,9 @@ bool inBBox(const vec3 &point, const vec3 &bboxRTB) {
 
 // Helper function for `bool intersectTest`.
 bool _intersectTestOnePlane(const float origin, const float direction,
-                            const float bboxRTB, double &t0Final,
+                            const float bboxBorder, double &t0Final,
                             double &t1Final) {
-  double bMin = 0, bMax = bboxRTB;
+  double bMin = 0, bMax = bboxBorder;
   double t0, t1;
 
   if (fabs(direction) > INTERSECT_EPSILON) { // direction != 0
@@ -332,7 +343,7 @@ void updateProgressBar(float progress, int barWidth = 50) {
 void applyLighting(RGBAColor &src, const vec3 &pos) {
   // using simplified Phong (without specular)
   vec3 normal = calcNormal(pos.x, pos.y, pos.z);
-  vec3 rgb(src.r, src.g, src.b);
+  vec3 rgb(src);
   float kDiffuse = std::max(glm::dot(normal, lightDirection), 0.0f);
   vec3 colored = (kDiffuse * diffuseColor + KAmbient * ambientColor) * rgb;
   zx::clipRGB(colored);
@@ -405,13 +416,10 @@ void castSomeRays(int rowLow, int rowHigh) {
 
 // Multi-thread Ray Casting
 void castAllRays() {
-  vector<thread> threadPool;
+  threadPool.clear();
   for (int i = 0; i < multiThread; i++) {
-    int low = int(sharePerThread * i * ImagePlaneHeight);
-    int high = i == multiThread - 1
-                   ? ImagePlaneHeight
-                   : int(sharePerThread * (i + 1) * ImagePlaneHeight);
-    threadPool.push_back(thread(castSomeRays, low, high));
+    threadPool.push_back(thread(castSomeRays, threadParamRanges.at(i).first,
+                                threadParamRanges.at(i).second));
   }
   for_each(threadPool.begin(), threadPool.end(), [=](thread &t) { t.join(); });
 }
@@ -500,8 +508,6 @@ void consoleLogWelcome() {
           "### Operation Guide ###\n"
           "########################\n";
 }
-
-bool shouldReCast = true;
 
 int main() {
   // initialize
