@@ -26,11 +26,11 @@ void TF_CT_Bone(const uint16 *volumeData, int voxelCount,
   uint16 v;
   for (int i = 0; i < voxelCount; i++) {
     v = volumeData[i];
-    if (v < 1155) {
-      color = Transparent; // [~, 1155], we dont care
-    } else if (v < 2200) { // [1155, 2200], bone (mostly)
+    if (v < 1200) {
+      color = Transparent; // [~, 1200], we dont care
+    } else if (v < 2200) { // [1200, 2200], bone (mostly)
       color =
-          RGBAColor(colorInterpLinear(v, 1155, 2200, RGBColor(180, 180, 180),
+          RGBAColor(colorInterpLinear(v, 1200, 2200, RGBColor(180, 180, 180),
                                       vec3(60, 60, 60)),
                     0.1); // gray
     } else {
@@ -53,8 +53,10 @@ void TF_CT_MuscleAndBone(const uint16 *volumeData, int voxelCount,
       color =
           RGBAColor(colorInterpLinear(v, 1040, 1155, RGBColor(255, 188, 155),
                                       vec3(0, 50, 50)),
-                    0.05); // "muscle" (skin) color
-    } else if (v < 2200) { // [1155, 2200], bone (mostly)
+                    0.05); // "muscle" color
+    } else if (v < 1200) {
+      color = Transparent;
+    } else if (v < 2200) { // [1200, 2200], bone (mostly)
       color =
           RGBAColor(colorInterpLinear(v, 1155, 2200, RGBColor(180, 180, 180),
                                       vec3(60, 60, 60)),

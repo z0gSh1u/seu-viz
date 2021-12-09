@@ -10,8 +10,8 @@
 // [geometry]
 //   Refer to the document for geometry definitions.
 // [bounding box]
-//   The left-bottom-front point of bounding box sits at (0, 0, 0).
-//   So we only need the right-top-back point `bboxRTB` to determine the
+//   The left-bottom-back point of bounding box sits at (0, 0, 0).
+//   So we only need the right-top-front point `bbox` to determine the
 //   bounding box.
 // [data]
 //   Required volume data is .raw file with 16-bit Unsigned LittleEndian
@@ -66,7 +66,7 @@ int WINDOW_WIDTH, WINDOW_HEIGHT;
 // [Volume Data Metainfo]
 string VolumePath;                           // volume raw file path
 int VolumeWidth, VolumeHeight, VolumeZCount; // x, y, z (thickness)
-vec3 bboxRTB;                                // bounding box Right-Top-Back
+vec3 bbox; // bounding box point beside (0, 0, 0)
 int PixelPerSlice, VoxelCount;
 uint16 *volumeData;           // volume data itself
 RGBAColor *coloredVolumeData; // after coloring using transfer function (TF)
@@ -80,7 +80,7 @@ int MedianFilterKSize;
 string TransferFunctionName;
 // Register your transfer function here.
 map<string, function<void(const uint16 *vol, int vCount, RGBAColor *res)>>
-    transferFunctionMap = {
+    TransferFunctionMap = {
         {"TF_CT_Bone", TF_CT_Bone},
         {"TF_CT_MuscleAndBone", TF_CT_MuscleAndBone},
         {"TF_CT_Skin", TF_CT_Skin},
@@ -105,11 +105,12 @@ float SamplingDelta;           // step of voxel sampling, coarse: 1, finer: 0.5
 bool shouldReCast = true;
 
 // [Observation]
-vec3 eyePos;                           // current eye position
-vec3 normalizedEyePos(0, 0, 1);        // for lookAt matrix calculation
-const vec3 initEyeDirection(0, 0, -1); // look towards -z by default
-mat3 currentRotateMatrix;              // current rotate matrix
-#define ARROW_KEY_TRACEBALL_DELTA 0.2  // increment for arrow key pressing
+vec3 eyePos;                             // current eye position
+vec3 normalizedEyePos(0, 0, 1);          // for lookAt matrix calculation
+const vec3 initEyeDirection(0, 0, -1);   // look towards -z by default
+mat3 currentRotateMatrix;                // current rotate matrix
+#define ARROW_KEY_TRACEBALL_DELTA_LR 0.2 // increment for L/R arrow key pressing
+#define ARROW_KEY_TRACEBALL_DELTA_UD 1   // increment for U/D arrow key pressing
 #define WS_KEY_FRONTBACK_DELTA 16 // increment for W/S key pressing at Z-axis
 void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __);
 
@@ -147,7 +148,7 @@ void loadConfigFileAndInitialize() {
   // far enough to hold the whole volume in view
   eyePos = vec3(0, 0, VolumeZCount + 1);
 
-  bboxRTB = vec3(VolumeWidth - 1, VolumeHeight - 1, VolumeZCount - 1);
+  bbox = vec3(VolumeWidth - 1, VolumeHeight - 1, VolumeZCount - 1);
   PixelPerSlice = VolumeWidth * VolumeHeight;
   VoxelCount = PixelPerSlice * VolumeZCount;
   volumeData = new uint16[VoxelCount];
@@ -203,7 +204,8 @@ vec3 calcNormal(int x, int y, int z) {
         z1 = z > 0 ? getVoxel(x, y, z - 1) : defaultValue,
         z2 = z < VolumeZCount - 1 ? getVoxel(x, y, z + 1) : defaultValue;
   // normalized normal equal to normalized gradient
-  vec3 gradient(x1 - x2, y1 - y2, z1 - z2);
+  // use normal that points out (Left Hand Side of curve growing)
+  vec3 gradient(x2 - x1, y2 - y1, z2 - z1); // the order is important
   vec3 gradientNorm = glm::normalize(gradient);
   // handle numerical precision error
   if (isnan(gradientNorm.x) || isnan(gradientNorm.y) || isnan(gradientNorm.z)) {
@@ -215,13 +217,13 @@ vec3 calcNormal(int x, int y, int z) {
 
 // Apply transfer function to fill `coloredVolumeData`.
 void applyTransferFunction(const string &name) {
-  ASSERT(transferFunctionMap.count(name) != 0,
+  ASSERT(TransferFunctionMap.count(name) != 0,
          "[ERROR] Invalid transfer function: " + TransferFunctionName);
-  transferFunctionMap[name](volumeData, VoxelCount, coloredVolumeData);
+  TransferFunctionMap[name](volumeData, VoxelCount, coloredVolumeData);
 }
 
 // Get interpolated color of pos using TriLinear method.
-RGBAColor colorInterpTriLinear(const vec3 &pos, const vec3 &bboxRTB) {
+RGBAColor colorInterpTriLinear(const vec3 &pos, const vec3 &bbox) {
   int x0, y0, z0, x1, y1, z1; // integer positions
   float xd, yd, zd;           // remainders
   RGBAColor res;
@@ -229,17 +231,17 @@ RGBAColor colorInterpTriLinear(const vec3 &pos, const vec3 &bboxRTB) {
   x0 = int(pos.x);
   xd = pos.x - x0;
   x1 = x0 + 1;
-  x1 = x1 > bboxRTB.x ? x1 - 1 : x1;
+  x1 = x1 > bbox.x ? x1 - 1 : x1;
 
   y0 = int(pos.y);
   yd = pos.y - y0;
   y1 = y0 + 1;
-  y1 = y1 > bboxRTB.y ? y1 - 1 : y1;
+  y1 = y1 > bbox.y ? y1 - 1 : y1;
 
   z0 = int(pos.z);
   zd = pos.z - z0;
   z1 = z0 + 1;
-  z1 = z1 > bboxRTB.z ? z1 - 1 : z1;
+  z1 = z1 > bbox.z ? z1 - 1 : z1;
 
   res =
       (1 - xd) * (1 - yd) * (1 - zd) *
@@ -267,9 +269,9 @@ void fusionColorFrontToBack(RGBAColor &accmulated, const RGBAColor &sample) {
 }
 
 // Judge if point is inside bounding box.
-bool inBBox(const vec3 &point, const vec3 &bboxRTB) {
-  return point.x >= 0 && point.x <= bboxRTB.x && point.y >= 0 &&
-         point.y <= bboxRTB.y && point.z >= 0 && point.z <= bboxRTB.z;
+bool inBBox(const vec3 &point, const vec3 &bbox) {
+  return point.x >= 0 && point.x <= bbox.x && point.y >= 0 &&
+         point.y <= bbox.y && point.z >= 0 && point.z <= bbox.z;
 }
 
 // Helper function for `bool intersectTest`.
@@ -303,16 +305,16 @@ bool _intersectTestOnePlane(const float origin, const float direction,
 // origin->direction determines the ray
 // the entry point (or first intersect point exactly) is returned using &entry
 // with parameter &t
-bool intersectTest(const vec3 &origin, const vec3 &direction,
-                   const vec3 &bboxRTB, vec3 &entry, float &t) {
+bool intersectTest(const vec3 &origin, const vec3 &direction, const vec3 &bbox,
+                   vec3 &entry, float &t) {
   // t0 is the parameter of entry, while t1 is of exit
   double t0Final = -(DBL_MAX - 1), t1Final = DBL_MAX - 1;
 
-  if (!_intersectTestOnePlane(origin.x, direction.x, bboxRTB.x, t0Final,
+  if (!_intersectTestOnePlane(origin.x, direction.x, bbox.x, t0Final,
                               t1Final) ||
-      !_intersectTestOnePlane(origin.y, direction.y, bboxRTB.y, t0Final,
+      !_intersectTestOnePlane(origin.y, direction.y, bbox.y, t0Final,
                               t1Final) ||
-      !_intersectTestOnePlane(origin.z, direction.z, bboxRTB.z, t0Final,
+      !_intersectTestOnePlane(origin.z, direction.z, bbox.z, t0Final,
                               t1Final)) {
     return false;
   }
@@ -329,7 +331,7 @@ bool intersectTest(const vec3 &origin, const vec3 &direction,
 
 // Implement of a simple progressbar.
 // @see https://stackoverflow.com/questions/14539867/
-void updateProgressBar(float progress, int barWidth = 50) {
+void updateProgressBar(float progress, int barWidth = 40) {
   cout << "[";
   int pos = barWidth * progress;
   for (int i = 0; i < barWidth; i++) {
@@ -342,6 +344,7 @@ void updateProgressBar(float progress, int barWidth = 50) {
 // Apply lighting at sample point.
 void applyLighting(RGBAColor &src, const vec3 &pos) {
   // using simplified Phong (without specular)
+  // float -> int, minor errors occur here
   vec3 normal = calcNormal(pos.x, pos.y, pos.z);
   vec3 rgb(src);
   float kDiffuse = std::max(glm::dot(normal, lightDirection), 0.0f);
@@ -354,7 +357,7 @@ void applyLighting(RGBAColor &src, const vec3 &pos) {
 
 // Cast one ray corresponding to (u, v) at image plane
 // according to `coloredVolumeData`. Returns the fused (blended) RGBAColor.
-void castOneRay(int u, int v, const vec3 &bboxRTB, const mat3 &rotateMat,
+void castOneRay(int u, int v, const vec3 &bbox, const mat3 &rotateMat,
                 const vec3 &translateVec,
                 const RGBAColor &defaultColor = RGBAColor(RGBBlack, 1.0)) {
   RGBAColor accumulated(0, 0, 0, 0); // acuumulated color during line integral
@@ -374,13 +377,13 @@ void castOneRay(int u, int v, const vec3 &bboxRTB, const mat3 &rotateMat,
   RGBAColor sampleColor; // current color (at current voxel)
   float paramT; // parameter t of entry or exit point (first intersect point)
 
-  if (intersectTest(source, direction, bboxRTB, entry, paramT)) {
+  if (intersectTest(source, direction, bbox, entry, paramT)) {
     // initialize samplePos
     samplePos = entry;
     // march the ray
-    while (inBBox(samplePos, bboxRTB) && accumulated.a < 1.0) {
+    while (inBBox(samplePos, bbox) && accumulated.a < 1.0) {
       // get sampleColor via interpolation
-      sampleColor = colorInterpTriLinear(samplePos, bboxRTB);
+      sampleColor = colorInterpTriLinear(samplePos, bbox);
       // light it
       if (EnableLighting) {
         applyLighting(sampleColor, samplePos);
@@ -406,7 +409,7 @@ void castOneRay(int u, int v, const vec3 &bboxRTB, const mat3 &rotateMat,
 void castSomeRays(int rowLow, int rowHigh) {
   for (int r = rowLow; r < rowHigh; r++) {
     for (int c = 0; c < ImagePlaneWidth; c++) {
-      castOneRay(c, r, bboxRTB, currentRotateMatrix, eyePos);
+      castOneRay(c, r, bbox, currentRotateMatrix, eyePos);
     }
     if (rowLow == 0) { // the first thread
       updateProgressBar(progress = progress + progressPerThreadPerRow);
@@ -506,6 +509,9 @@ void consoleLogWelcome() {
           "# @ github.com/z0gSh1u/seu-viz #\n"
           "################################\n"
           "### Operation Guide ###\n"
+          "Left / Right Arrow Key: Go Left / Right\n"
+          "Up / Down Arrow Key: Look Upper / Bottom\n"
+          "W / S Key: Go Forward / Backward\n"
           "########################\n";
 }
 
@@ -513,6 +519,10 @@ int main() {
   // initialize
   consoleLogWelcome();
   loadConfigFileAndInitialize();
+
+  // tell user if lighting is enabled
+  cout << "[Enable Lighting]: " << (EnableLighting ? "Yes" : "No") << endl
+       << endl;
 
   GLFWwindow *window =
       initGLWindow("Project 2 - Ray Casting / Zhuo Xu 212138 SEU", WINDOW_WIDTH,
@@ -581,28 +591,20 @@ void keyboardCallback(GLFWwindow *window, int key, int _, int action, int __) {
   if (action == GLFW_PRESS) {
     if (key == GLFW_KEY_LEFT) {
       // go left
-      if (normalizedEyePos.x >= -1) {
-        normalizedEyePos.x -= ARROW_KEY_TRACEBALL_DELTA;
-        shouldReCast = true;
-      }
+      normalizedEyePos.x -= ARROW_KEY_TRACEBALL_DELTA_LR;
+      shouldReCast = true;
     } else if (key == GLFW_KEY_RIGHT) {
       // go right
-      if (normalizedEyePos.x <= 1) {
-        normalizedEyePos.x += ARROW_KEY_TRACEBALL_DELTA;
-        shouldReCast = true;
-      }
+      normalizedEyePos.x += ARROW_KEY_TRACEBALL_DELTA_LR;
+      shouldReCast = true;
     } else if (key == GLFW_KEY_UP) {
       // go top
-      if (normalizedEyePos.y >= -1) {
-        normalizedEyePos.y -= ARROW_KEY_TRACEBALL_DELTA;
-        shouldReCast = true;
-      }
+      normalizedEyePos.y -= ARROW_KEY_TRACEBALL_DELTA_UD;
+      shouldReCast = true;
     } else if (key == GLFW_KEY_DOWN) {
       // go bottom
-      if (normalizedEyePos.y <= 1) {
-        normalizedEyePos.y += ARROW_KEY_TRACEBALL_DELTA;
-        shouldReCast = true;
-      }
+      normalizedEyePos.y += ARROW_KEY_TRACEBALL_DELTA_UD;
+      shouldReCast = true;
     } else if (key == GLFW_KEY_W) {
       // go forward
       if (eyePos.z > WS_KEY_FRONTBACK_DELTA) {

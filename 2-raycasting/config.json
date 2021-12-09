@@ -2,7 +2,7 @@
   "WindowWidth": 512,
   "WindowHeight": 512,
 
-  "VolumePath": "./model/lungct_C052_512_512_340.rev.raw",
+  "VolumePath": "./model/lungct_C052_512_512_340.raw",
   "VolumeWidth": 512,
   "VolumeHeight": 512,
   "VolumeZCount": 340,
@@ -10,10 +10,10 @@
   "ImagePlaneWidth": 512,
   "ImagePlaneHeight": 512,
 
-  "TransferFunction": "TF_CT_Bone",
+  "TransferFunction": "TF_CT_MuscleAndBone",
   "MedianFilterKSize": 0,
   "SamplingDelta": 0.5,
-  "EnableLighting": true,
+  "EnableLighting": false,
   "KAmbient": 0.6,
 
   "MultiThread": 4
