@@ -13,7 +13,7 @@ Configurate `config.json` according to your volume data, and compile the solutio
 
 ![rcdemo](./asset/rcdemo.png)
 
-## 1-Display
+## 1-display
 
 Compile the solution with `1-display` as boot project.
 
@@ -29,7 +29,7 @@ vcpkg install glfw3 glad glm rapidjson
 
 ## Document
 
-See [《信息可视化技术》实验报告与课程报告（212138-卓旭）.pdf](./doc/《信息可视化技术》实验报告与课程报告（212138-卓旭）.pdf) 。
+See [《信息可视化技术》课程实验报告与课程综述报告（212138-卓旭）.pdf](./doc/《信息可视化技术》课程实验报告与课程综述报告（212138-卓旭）.pdf) 。
 
 ## DO NOT COPY!
 
